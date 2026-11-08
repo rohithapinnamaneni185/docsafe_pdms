@@ -1,9 +1,12 @@
 package com.pdms.service;
 
-import com.pdms.dto.LoginInitiateRequest;
-import com.pdms.dto.LoginInitiateResponse;
+import com.pdms.dto.LoginOtpResponse;
+import com.pdms.dto.LoginRequest;
+import com.pdms.entity.OtpVerification;
 import com.pdms.entity.User;
 import com.pdms.exception.BadRequestException;
+import com.pdms.exception.UnauthorizedException;
+import com.pdms.repository.OtpVerificationRepository;
 import com.pdms.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,6 +29,12 @@ class OtpServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private OtpVerificationRepository otpVerificationRepository;
+
+    @Mock
+    private EmailService emailService;
+
     @InjectMocks
     private OtpService otpService;
 
@@ -35,96 +44,89 @@ class OtpServiceTest {
     void setUp() {
         sampleUser = new User("Rohitha (Self)", "admin@docusafe.local", "admin123", "Self", "ROLE_ADMIN");
         sampleUser.setId(1L);
-        sampleUser.setMobileNumber("9876543210");
     }
 
     @Test
-    @DisplayName("initiateLogin generates 6-digit OTP and returns tempToken for valid email")
-    void testInitiateLoginByEmail() {
-        when(userRepository.findByIdentifier("admin@docusafe.local")).thenReturn(Optional.of(sampleUser));
+    @DisplayName("loginRequest generates 6-digit OTP and returns response for valid email + password")
+    void testLoginRequestSuccess() {
+        when(userRepository.findByEmailIgnoreCase("admin@docusafe.local")).thenReturn(Optional.of(sampleUser));
         when(userRepository.save(any(User.class))).thenReturn(sampleUser);
+        if (otpVerificationRepository != null) {
+            when(otpVerificationRepository.save(any(OtpVerification.class))).thenReturn(new OtpVerification());
+        }
 
-        LoginInitiateRequest request = new LoginInitiateRequest("admin@docusafe.local", "admin123");
-        LoginInitiateResponse response = otpService.initiateLogin(request);
+        LoginRequest request = new LoginRequest("admin@docusafe.local", "admin123");
+        LoginOtpResponse response = otpService.loginRequest(request);
 
         assertNotNull(response);
-        assertEquals("OTP_REQUIRED", response.getStatus());
+        assertTrue(response.isSuccess());
+        assertEquals("admin@docusafe.local", response.getEmail());
+        assertNotNull(response.getDemoOtp());
+        assertEquals(6, response.getDemoOtp().length());
         assertNotNull(response.getTempToken());
-        assertNotNull(response.getDebugOtp());
-        assertEquals(6, response.getDebugOtp().length());
-        assertTrue(response.getDestination().contains("docusafe.local"));
     }
 
     @Test
-    @DisplayName("initiateLogin accepts 10-digit mobile number")
-    void testInitiateLoginByMobile() {
-        when(userRepository.findByIdentifier("9876543210")).thenReturn(Optional.of(sampleUser));
+    @DisplayName("loginRequest throws 401 UnauthorizedException on incorrect password")
+    void testLoginRequestWrongPassword() {
+        when(userRepository.findByEmailIgnoreCase("admin@docusafe.local")).thenReturn(Optional.of(sampleUser));
+
+        LoginRequest request = new LoginRequest("admin@docusafe.local", "wrongpassword");
+
+        UnauthorizedException ex = assertThrows(UnauthorizedException.class, () -> otpService.loginRequest(request));
+        assertEquals("Invalid email or password", ex.getMessage());
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    @DisplayName("loginRequest throws 401 UnauthorizedException when email is not found")
+    void testLoginRequestEmailNotFound() {
+        when(userRepository.findByEmailIgnoreCase("unknown@example.com")).thenReturn(Optional.empty());
+
+        LoginRequest request = new LoginRequest("unknown@example.com", "admin123");
+
+        UnauthorizedException ex = assertThrows(UnauthorizedException.class, () -> otpService.loginRequest(request));
+        assertEquals("Invalid email or password", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("verifyOtpByEmail returns authenticated user on valid code")
+    void testVerifyOtpByEmailSuccess() {
+        when(userRepository.findByEmailIgnoreCase("admin@docusafe.local")).thenReturn(Optional.of(sampleUser));
         when(userRepository.save(any(User.class))).thenReturn(sampleUser);
 
-        LoginInitiateRequest request = new LoginInitiateRequest("9876543210", "admin123");
-        LoginInitiateResponse response = otpService.initiateLogin(request);
+        LoginRequest request = new LoginRequest("admin@docusafe.local", "admin123");
+        LoginOtpResponse initResp = otpService.loginRequest(request);
 
-        assertNotNull(response);
-        assertEquals("OTP_REQUIRED", response.getStatus());
-        assertNotNull(response.getTempToken());
-        assertEquals(6, response.getDebugOtp().length());
-    }
-
-    @Test
-    @DisplayName("initiateLogin throws BadRequestException on invalid password")
-    void testInitiateLoginWrongPassword() {
-        when(userRepository.findByIdentifier("admin@docusafe.local")).thenReturn(Optional.of(sampleUser));
-
-        LoginInitiateRequest request = new LoginInitiateRequest("admin@docusafe.local", "wrongpassword");
-
-        BadRequestException ex = assertThrows(BadRequestException.class, () -> otpService.initiateLogin(request));
-        assertTrue(ex.getMessage().contains("Invalid credentials"));
-    }
-
-    @Test
-    @DisplayName("verifyOtp returns authenticated user on valid code")
-    void testVerifyOtpSuccess() {
-        when(userRepository.findByIdentifier("admin@docusafe.local")).thenReturn(Optional.of(sampleUser));
-        when(userRepository.findById(1L)).thenReturn(Optional.of(sampleUser));
-        when(userRepository.save(any(User.class))).thenReturn(sampleUser);
-
-        LoginInitiateRequest request = new LoginInitiateRequest("admin@docusafe.local", "admin123");
-        LoginInitiateResponse initResp = otpService.initiateLogin(request);
-
-        User verifiedUser = otpService.verifyOtp(initResp.getTempToken(), initResp.getDebugOtp());
+        User verifiedUser = otpService.verifyOtpByEmail("admin@docusafe.local", initResp.getDemoOtp());
         assertNotNull(verifiedUser);
         assertEquals("Rohitha (Self)", verifiedUser.getFullName());
     }
 
     @Test
-    @DisplayName("verifyOtp throws on invalid OTP code")
-    void testVerifyOtpInvalidCode() {
-        when(userRepository.findByIdentifier("admin@docusafe.local")).thenReturn(Optional.of(sampleUser));
+    @DisplayName("verifyOtpByEmail throws BadRequestException on invalid code")
+    void testVerifyOtpByEmailInvalidCode() {
+        when(userRepository.findByEmailIgnoreCase("admin@docusafe.local")).thenReturn(Optional.of(sampleUser));
         when(userRepository.save(any(User.class))).thenReturn(sampleUser);
 
-        LoginInitiateRequest request = new LoginInitiateRequest("admin@docusafe.local", "admin123");
-        LoginInitiateResponse initResp = otpService.initiateLogin(request);
+        LoginRequest request = new LoginRequest("admin@docusafe.local", "admin123");
+        otpService.loginRequest(request);
 
         BadRequestException ex = assertThrows(BadRequestException.class, () ->
-                otpService.verifyOtp(initResp.getTempToken(), "000000"));
+                otpService.verifyOtpByEmail("admin@docusafe.local", "000000"));
         assertTrue(ex.getMessage().contains("Invalid 6-digit OTP"));
     }
 
     @Test
-    @DisplayName("resendOtp generates a new OTP")
-    void testResendOtp() {
-        when(userRepository.findByIdentifier("admin@docusafe.local")).thenReturn(Optional.of(sampleUser));
-        when(userRepository.findById(1L)).thenReturn(Optional.of(sampleUser));
+    @DisplayName("resendOtpByEmail dispatches a fresh OTP")
+    void testResendOtpByEmail() {
+        when(userRepository.findByEmailIgnoreCase("admin@docusafe.local")).thenReturn(Optional.of(sampleUser));
         when(userRepository.save(any(User.class))).thenReturn(sampleUser);
 
-        LoginInitiateRequest request = new LoginInitiateRequest("admin@docusafe.local", "admin123");
-        LoginInitiateResponse initResp = otpService.initiateLogin(request);
-
-        LoginInitiateResponse resendResp = otpService.resendOtp(initResp.getTempToken());
+        LoginOtpResponse resendResp = otpService.resendOtpByEmail("admin@docusafe.local");
         assertNotNull(resendResp);
-        assertEquals("OTP_REQUIRED", resendResp.getStatus());
-        assertEquals(initResp.getTempToken(), resendResp.getTempToken());
-        assertEquals(6, resendResp.getDebugOtp().length());
+        assertTrue(resendResp.isSuccess());
+        assertEquals("admin@docusafe.local", resendResp.getEmail());
+        assertEquals(6, resendResp.getDemoOtp().length());
     }
 }
-
