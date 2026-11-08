@@ -67,26 +67,35 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("Should allow deletion when attempting to delete self")
-    void deleteFamilyMember_CanDeleteSelf() {
-        when(userRepository.findById(1L)).thenReturn(Optional.of(adminUser));
-        when(documentRepository.findByUserIdOrderByCreatedAtDesc(1L)).thenReturn(List.of());
-
-        userService.deleteFamilyMember(1L, adminUser);
-        verify(userRepository, times(1)).delete(adminUser);
+    @DisplayName("Should reject deletion if current user is not admin")
+    void deleteFamilyMember_NonAdminThrows() {
+        BadRequestException ex = assertThrows(BadRequestException.class, () ->
+                userService.deleteFamilyMember(2L, regularMember));
+        assertTrue(ex.getMessage().contains("Only the primary administrator"));
+        verifyNoInteractions(documentRepository);
     }
 
     @Test
-    @DisplayName("Should allow deletion when target has admin role or Self relationship")
-    void deleteFamilyMember_CanDeleteAdminAccount() {
+    @DisplayName("Should reject deletion when attempting to delete self")
+    void deleteFamilyMember_CannotDeleteSelf() {
+        BadRequestException ex = assertThrows(BadRequestException.class, () ->
+                userService.deleteFamilyMember(1L, adminUser));
+        assertEquals("Cannot remove primary vault administrator.", ex.getMessage());
+        verifyNoInteractions(documentRepository);
+    }
+
+    @Test
+    @DisplayName("Should reject deletion when target has admin role or Self relationship")
+    void deleteFamilyMember_CannotDeleteAdminAccount() {
         User anotherAdmin = new User("Admin Two", "admin2@docusafe.local", "pass", "Self", "ROLE_ADMIN");
         anotherAdmin.setId(5L);
 
         when(userRepository.findById(5L)).thenReturn(Optional.of(anotherAdmin));
-        when(documentRepository.findByUserIdOrderByCreatedAtDesc(5L)).thenReturn(List.of());
 
-        userService.deleteFamilyMember(5L, adminUser);
-        verify(userRepository, times(1)).delete(anotherAdmin);
+        BadRequestException ex = assertThrows(BadRequestException.class, () ->
+                userService.deleteFamilyMember(5L, adminUser));
+        assertEquals("Cannot remove primary vault administrator.", ex.getMessage());
+        verify(userRepository, never()).delete(any());
     }
 
     @Test

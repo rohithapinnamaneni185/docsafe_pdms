@@ -8,17 +8,9 @@ import com.pdms.entity.User;
 import com.pdms.service.UserService;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -28,7 +20,6 @@ public class UserController {
 
     private final UserService userService;
 
-    @Autowired
     public UserController(UserService userService) {
         this.userService = userService;
     }
@@ -39,7 +30,7 @@ public class UserController {
      */
     @GetMapping({"/family-members", "/family"})
     public ResponseEntity<ApiResponse<List<UserResponse>>> getFamilyMembers(HttpSession session) {
-        AuthController.getAuthenticatedUserOrThrow(session, userService);
+        User currentUser = AuthController.getAuthenticatedUserOrThrow(session, userService);
         List<UserResponse> members = userService.getFamilyMembers();
         return ResponseEntity.ok(ApiResponse.ok("Retrieved " + members.size() + " family members", members));
     }
@@ -64,7 +55,7 @@ public class UserController {
      */
     @PutMapping({"/family-members/{id}", "/{id}"})
     public ResponseEntity<ApiResponse<UserResponse>> updateFamilyMember(
-            @PathVariable("id") Long id,
+            @PathVariable Long id,
             @Valid @RequestBody UpdateMemberRequest request,
             HttpSession session) {
         User currentUser = AuthController.getAuthenticatedUserOrThrow(session, userService);
@@ -78,11 +69,10 @@ public class UserController {
      */
     @DeleteMapping({"/family-members/{id}", "/{id}"})
     public ResponseEntity<ApiResponse<Void>> deleteFamilyMember(
-            @PathVariable("id") Long id,
+            @PathVariable Long id,
             HttpSession session) {
         User currentUser = AuthController.getAuthenticatedUserOrThrow(session, userService);
         userService.deleteFamilyMember(id, currentUser);
         return ResponseEntity.ok(ApiResponse.ok("Family member removed successfully.", null));
     }
 }
-

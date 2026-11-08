@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public class VerifyOtpRequest {
 
-    private String email;
+    @NotBlank(message = "Session token is required")
     private String tempToken;
 
     @NotBlank(message = "OTP code is required")
@@ -13,17 +13,9 @@ public class VerifyOtpRequest {
     public VerifyOtpRequest() {
     }
 
-    public VerifyOtpRequest(String email, String otp) {
-        this.email = email;
+    public VerifyOtpRequest(String tempToken, String otp) {
+        this.tempToken = tempToken;
         this.otp = otp;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
     }
 
     public String getTempToken() {
@@ -42,3 +34,4 @@ public class VerifyOtpRequest {
         this.otp = otp;
     }
 }
+

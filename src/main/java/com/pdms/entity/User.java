@@ -28,8 +28,8 @@ public class User {
 
     @NotBlank(message = "Email is required")
     @Email(message = "Please provide a valid email address")
-    @Size(max = 255, message = "Email cannot exceed 255 characters")
-    @Column(name = "email", nullable = false, unique = true, length = 255)
+    @Size(max = 150, message = "Email cannot exceed 150 characters")
+    @Column(name = "email", nullable = false, unique = true, length = 150)
     private String email;
 
     @Size(max = 15, message = "Mobile number cannot exceed 15 characters")

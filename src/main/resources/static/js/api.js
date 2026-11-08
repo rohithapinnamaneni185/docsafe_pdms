@@ -52,47 +52,27 @@ const API = (() => {
 
     return {
         /* ================= AUTHENTICATION APIS ================= */
-        async loginRequest(email, password) {
-            return await request('/auth/login-request', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password })
-            });
-        },
-
-        async registerRequest(fullName, email, password) {
-            return await request('/auth/register-request', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fullName, email, password })
-            });
-        },
-
-        async googleLogin(email, fullName = null) {
-            return await request('/auth/google-login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, fullName })
-            });
-        },
-
         async loginInitiate(identifier, password) {
-            return await this.loginRequest(identifier, password);
+            return await request('/auth/login-initiate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ identifier, password })
+            });
         },
 
-        async verifyOtp(email, otp, tempToken = null) {
+        async verifyOtp(tempToken, otp) {
             return await request('/auth/verify-otp', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, otp, tempToken })
+                body: JSON.stringify({ tempToken, otp })
             });
         },
 
-        async resendOtp(email, tempToken = null) {
+        async resendOtp(tempToken) {
             return await request('/auth/resend-otp', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, tempToken })
+                body: JSON.stringify({ tempToken })
             });
         },
 
@@ -142,7 +122,7 @@ const API = (() => {
         },
 
         async deleteFamilyMember(id) {
-            return await request(`/members/${id}`, {
+            return await request(`/auth/family-members/${id}`, {
                 method: 'DELETE'
             });
         },

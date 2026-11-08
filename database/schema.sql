@@ -17,7 +17,7 @@ USE personal_document_db;
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT NOT NULL AUTO_INCREMENT,
     full_name VARCHAR(150) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
+    email VARCHAR(150) NOT NULL UNIQUE,
     mobile_number VARCHAR(15) DEFAULT NULL,
     password VARCHAR(255) NOT NULL,
     relationship VARCHAR(50) NOT NULL DEFAULT 'Self',
@@ -32,21 +32,7 @@ CREATE TABLE IF NOT EXISTS users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------------------
--- Table structure for table: otp_verifications
--- --------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS otp_verifications (
-    id BIGINT NOT NULL AUTO_INCREMENT,
-    email VARCHAR(255) NOT NULL,
-    otp_code VARCHAR(6) NOT NULL,
-    expires_at DATETIME NOT NULL,
-    verified BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    INDEX idx_otp_email (email)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- --------------------------------------------------------------------
--- Default Admin Account (admin@docusafe.local / admin123)
+-- Default Admin Account (admin@docusafe.local / 9876543210 / admin123)
 -- --------------------------------------------------------------------
 INSERT INTO users (id, full_name, email, mobile_number, password, relationship, role, theme, created_at)
 SELECT 1, 'Rohitha (Self)', 'admin@docusafe.local', '9876543210', 'admin123', 'Self', 'ROLE_ADMIN', 'theme-default', NOW()

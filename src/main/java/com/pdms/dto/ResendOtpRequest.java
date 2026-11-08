@@ -1,23 +1,17 @@
 package com.pdms.dto;
 
+import jakarta.validation.constraints.NotBlank;
+
 public class ResendOtpRequest {
 
-    private String email;
+    @NotBlank(message = "Session token is required")
     private String tempToken;
 
     public ResendOtpRequest() {
     }
 
-    public ResendOtpRequest(String email) {
-        this.email = email;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
+    public ResendOtpRequest(String tempToken) {
+        this.tempToken = tempToken;
     }
 
     public String getTempToken() {
@@ -28,3 +22,4 @@ public class ResendOtpRequest {
         this.tempToken = tempToken;
     }
 }
+

@@ -1,4 +1,2 @@
 com\pdms\controller\DocumentControllerTest.class
 com\pdms\service\DocumentServiceTest.class
-com\pdms\service\OtpServiceTest.class
-com\pdms\service\UserServiceTest.class
