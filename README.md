@@ -6,20 +6,20 @@ DocuSafe allows families and individuals to securely store personal documents (D
 
 ---
 
-## 1. Localhost Link & Direct Access
+## 1. Localhost Link & Sign-In
 
 Access the complete system directly in your browser at:
 
 **[http://localhost:8080](http://localhost:8080)**
 
-*No login screen or password required—DocuSafe loads directly into the main Dashboard as the Primary Administrator (`System Administrator (Self)`).*
+Sign in with an existing account or create an account. Both flows require an emailed six-digit verification code before opening the dashboard.
 
 ---
 
 ## 2. Key Features
 
-1. **Direct Access & One-Click Vault Switcher**:
-   - The application opens immediately into the active dashboard with zero login barriers.
+1. **Email Sign-In & One-Click Vault Switcher**:
+   - Sign-in and registration are protected by a real email verification code.
    - Use the **"Active Vault"** selector in the top header or click **"Manage Vault"** on any member card to instantly switch between household members (Admin, Spouse, Child, etc.).
    - Vault metrics, document lists, and categories automatically update in real time to match the active member.
 2. **Family Member Vaults & Access Isolation**:
@@ -136,19 +136,19 @@ CREATE DATABASE IF NOT EXISTS personal_document_db;
 ```
 
 ### Step 3: Run the Schema
-Run `database/schema.sql` to create `users` and `documents` tables:
+Run `database/schema.sql` to create the `users`, `otp_tokens`, and `documents` tables:
 ```cmd
 mysql -u root -p personal_document_db < database/schema.sql
 ```
 *(Or let Spring Boot Data JPA automatically verify/update the tables on startup).*
 
-### Step 4: Configure Database Credentials
-Edit `src/main/resources/application.properties` if your MySQL password is not `mysql`:
-```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/personal_document_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-spring.datasource.username=root
-spring.datasource.password=mysql
-```
+### Step 4: Configure credentials
+Set database credentials through `SPRING_DATASOURCE_USERNAME` and `SPRING_DATASOURCE_PASSWORD` before starting the app.
+
+### Step 5: Configure Gmail SMTP
+Set `SPRING_MAIL_USERNAME` to the Gmail sender address and `SPRING_MAIL_PASSWORD` to a newly generated Google App Password. Do not put SMTP credentials in source files. For production, also set `DOCUSAFE_SEED_PASSWORD` to a unique strong initial password before the first startup.
+
+The application sends real OTP email through Gmail SMTP. Registration and sign-in codes expire after five minutes, and resend requests have a 60-second cooldown.
 
 ---
 
@@ -173,33 +173,13 @@ mvnw.cmd test
 
 ---
 
-## 7. How to Test Multi-User Flow & Vault Isolation
+## 7. Account Registration and Vault Isolation
 
-1. Open your browser and navigate to **[http://localhost:8080](http://localhost:8080)**.
-2. **Sign In as Administrator**:
-   - Use `admin@docusafe.local` / `admin123` (or click **"Use Admin Demo Account"**).
-   - You will enter the main Admin Dashboard with full access to all household documents.
-3. **Add a Family Member**:
-   - Click **"Family Members"** in the sidebar.
-   - Click **"+ Add Member"**.
-   - Enter details:
-     - Full Name: `Jane Doe`
-     - Email: `jane@docusafe.local`
-     - Password: `password123`
-     - Relationship: `Spouse`
-   - Click **"Save Family Member"**. The new member card appears immediately with 0 documents.
-4. **Test Document Isolation as Family Member**:
-   - Click the user avatar in the top right or sidebar footer and click **"Sign Out"**.
-   - Sign in using Jane's credentials: `jane@docusafe.local` / `password123`.
-   - Observe Jane's Dashboard: All metrics (**Total Documents: 0**) and categories are completely isolated. She does not see Admin's documents.
-   - Click **"+ Add Document"** and create a document (e.g. `Jane Passport`, Category: `Passport`).
-   - The document is automatically assigned to Jane. Her dashboard now displays **Total Documents: 1**.
-5. **Verify Primary Admin Oversight**:
-   - Sign out and log back in as `admin@docusafe.local`.
-   - Admin now sees all documents including Jane's document tagged with a `Jane Doe (Spouse)` badge.
-   - Admin can use the **Family Member** filter dropdown on the Dashboard or All Documents page to filter documents specifically by member.
-
----
+1. Open `http://localhost:8080`.
+2. Select **Create Account** to register with a name, email, and password, or **Sign In** for an existing account.
+3. Enter the emailed six-digit verification code to access the vault. The code expires after five minutes; resending is available after the 60-second cooldown.
+4. The default administrator and member accounts are created on startup when absent. Set `DOCUSAFE_SEED_PASSWORD` before startup to choose their initial password; do not use the development default in production.
+5. Administrators can add family members from the Family Members view. Member vaults remain isolated.
 
 ## 8. Expiry Calculation Rules (Authoritative Backend)
 
@@ -207,5 +187,3 @@ mvnw.cmd test
 - **Expiring Soon**: Expiry date is today or within the next 30 days (`today <= expiryDate <= today + 30 days`).
 - **Valid**: Expiry date is more than 30 days away (`expiryDate > today + 30 days`).
 - **No Expiry Date**: Expiry date is not provided (for lifetime documents like Degree Certificates or PAN Cards).
-#   d o c s a f e _ p d m s  
- 

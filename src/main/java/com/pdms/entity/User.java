@@ -28,23 +28,16 @@ public class User {
 
     @NotBlank(message = "Email is required")
     @Email(message = "Please provide a valid email address")
-    @Size(max = 150, message = "Email cannot exceed 150 characters")
-    @Column(name = "email", nullable = false, unique = true, length = 150)
+    @Size(max = 255, message = "Email cannot exceed 255 characters")
+    @Column(name = "email", nullable = false, unique = true, length = 255)
     private String email;
 
     @Size(max = 15, message = "Mobile number cannot exceed 15 characters")
     @Column(name = "mobile_number", length = 15)
     private String mobileNumber;
 
-    @Column(name = "otp_code", length = 6)
-    private String otpCode;
-
-    @Column(name = "otp_expiry")
-    private LocalDateTime otpExpiry;
-
-    @NotBlank(message = "Password is required")
     @Size(max = 255, message = "Password cannot exceed 255 characters")
-    @Column(name = "password", nullable = false, length = 255)
+    @Column(name = "password_hash", length = 255)
     private String password;
 
     @NotBlank(message = "Relationship is required")
@@ -108,22 +101,6 @@ public class User {
 
     public void setMobileNumber(String mobileNumber) {
         this.mobileNumber = mobileNumber;
-    }
-
-    public String getOtpCode() {
-        return otpCode;
-    }
-
-    public void setOtpCode(String otpCode) {
-        this.otpCode = otpCode;
-    }
-
-    public LocalDateTime getOtpExpiry() {
-        return otpExpiry;
-    }
-
-    public void setOtpExpiry(LocalDateTime otpExpiry) {
-        this.otpExpiry = otpExpiry;
     }
 
     public String getPassword() {

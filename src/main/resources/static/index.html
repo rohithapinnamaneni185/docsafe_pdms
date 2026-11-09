@@ -32,61 +32,73 @@
                 <p class="login-brand-tagline">Multi-Member Personal & Family Document Vault</p>
             </div>
 
-            <!-- STEP 1: Email / Mobile + Password Form -->
+            <!-- Status Banner (Responsive Alert) -->
+            <div id="authAlert" class="auth-alert" style="display: none;"></div>
+
+            <!-- STEP 1: Email + Password Form -->
             <div class="login-step-card" id="loginStep1Card">
                 <div class="login-step-header">
-                    <h3>Secure Vault Sign In</h3>
-                    <p>Enter your registered Email address or 10-digit Mobile number to begin.</p>
+                    <h3>Secure Vault Sign In or Create an Account</h3>
+                    <p>Enter your email and password. New accounts are verified by email code.</p>
+                </div>
+
+                <div class="auth-mode-toggle" role="tablist" aria-label="Account action">
+                    <button type="button" class="auth-mode-button active" id="btnSignInMode" role="tab" aria-selected="true">Sign In</button>
+                    <button type="button" class="auth-mode-button" id="btnRegisterMode" role="tab" aria-selected="false">Create Account</button>
                 </div>
 
                 <form id="formLoginStep1" autocomplete="on">
+                    <div class="form-group" id="fullNameGroup" style="display: none;">
+                        <label for="fullName">Full Name</label>
+                        <input type="text" id="fullName" class="form-control" placeholder="Your full name" autocomplete="name" maxlength="150">
+                    </div>
                     <div class="form-group">
-                        <label for="loginIdentifier">Email or Mobile Number</label>
+                        <label for="email">Email Address</label>
                         <div class="input-with-icon">
                             <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                                 <circle cx="12" cy="7" r="4"></circle>
                             </svg>
-                            <input type="text" id="loginIdentifier" class="form-control" placeholder="admin@docusafe.local or 9876543210" required autocomplete="username">
+                            <input type="email" id="email" class="form-control" placeholder="name@example.com" required autocomplete="username">
                         </div>
                     </div>
 
                     <div class="form-group">
-                        <label for="loginPassword">Password</label>
+                        <label for="password">Password</label>
                         <div class="input-with-icon">
                             <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                                 <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                             </svg>
-                            <input type="password" id="loginPassword" class="form-control" placeholder="••••••••" required autocomplete="current-password">
+                            <input type="password" id="password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
                         </div>
                     </div>
 
-                    <button type="submit" class="btn btn-primary btn-block btn-lg" id="btnInitiateLogin">
-                        <span>Continue & Send OTP</span>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <button type="submit" class="btn btn-primary btn-block btn-lg" id="sendOtpBtn">
+                        <span class="btn-text">Continue & Send OTP</span>
+                        <svg class="btn-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="5" y1="12" x2="19" y2="12"></line>
                             <polyline points="12 5 19 12 12 19"></polyline>
                         </svg>
                     </button>
                 </form>
 
-                <!-- Demo Credentials Helper Card -->
-                <div class="demo-credentials-card">
-                    <div class="demo-badge-row">
-                        <span class="demo-badge">Evaluation / Demo Mode</span>
-                        <button type="button" class="btn-demo-autofill" id="btnFillDemoCreds" title="Click to autofill administrator credentials">
-                            ⚡ Autofill Admin
-                        </button>
-                    </div>
-                    <div class="demo-cred-info">
-                        <div><strong>Email / Phone:</strong> <code>admin@docusafe.local</code> / <code>9876543210</code></div>
-                        <div><strong>Password:</strong> <code>admin123</code> (Admin / Rohitha)</div>
-                    </div>
+                <div class="auth-divider">
+                    <span>OR</span>
                 </div>
+
+                <a href="/oauth2/authorization/google" class="btn-google" id="btnGoogleSignIn">
+                    <svg width="18" height="18" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+                    <span>Sign in with Google</span>
+                </a>
             </div>
 
-            <!-- STEP 2: 6-Digit OTP Verification Form -->
+            <!-- STEP 2: 6-Digit OTP Verification Form (initially hidden) -->
             <div class="login-step-card" id="loginStep2Card" style="display: none;">
                 <div class="login-step-header">
                     <div class="step2-icon-wrap">
@@ -95,29 +107,37 @@
                             <line x1="12" y1="18" x2="12.01" y2="18"></line>
                         </svg>
                     </div>
-                    <h3>Two-Step Verification</h3>
-                    <p>Enter the 6-digit verification code dispatched to <strong id="otpDestinationText">your registered email/mobile</strong></p>
+                    <h3>Verify Your Identity</h3>
+                    <p id="otpSubtitle">We sent a 6-digit verification code to <strong id="otpDestinationText">your registered email address</strong>.</p>
                 </div>
 
                 <form id="formLoginStep2">
                     <div class="form-group" style="text-align: center;">
-                        <label for="otpInput" style="margin-bottom: 8px;">Enter 6-Digit OTP Code</label>
-                        <input type="text" id="otpInput" class="form-control otp-input-field" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" placeholder="••••••" required autocomplete="one-time-code">
+                        <label style="margin-bottom: 8px;">Enter 6-Digit Code</label>
+                        <div class="otp-boxes-container" id="otpBoxesContainer">
+                            <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" data-index="0" autocomplete="off">
+                            <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" data-index="1" autocomplete="off">
+                            <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" data-index="2" autocomplete="off">
+                            <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" data-index="3" autocomplete="off">
+                            <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" data-index="4" autocomplete="off">
+                            <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" data-index="5" autocomplete="off">
+                        </div>
+                        <input type="hidden" id="otpInput" maxlength="6">
                         <span class="form-hint">Code valid for 5 minutes</span>
                     </div>
 
-                    <button type="submit" class="btn btn-primary btn-block btn-lg" id="btnVerifyOtp">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <button type="submit" class="btn btn-primary btn-block btn-lg" id="verifyOtpBtn">
+                        <svg class="btn-verify-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                             <polyline points="22 4 12 14.01 9 11.01"></polyline>
                         </svg>
-                        <span>Verify & Access Vault</span>
+                        <span class="btn-text">Verify & Access Vault</span>
                     </button>
                 </form>
 
                 <!-- Resend & Back Controls -->
                 <div class="otp-actions-row">
-                    <span id="otpCountdownWrapper">Resend code in <strong id="otpTimerText">30s</strong></span>
+                    <span id="otpCountdownWrapper">Resend code in <strong id="otpTimerText">01:00</strong></span>
                     <button type="button" class="btn-link" id="btnResendOtp" style="display: none;">Resend Code</button>
                 </div>
 
@@ -129,18 +149,6 @@
                         </svg>
                         Back to Sign In
                     </button>
-                </div>
-
-                <!-- Development Simulated OTP Helper Badge -->
-                <div class="dev-otp-badge" id="devOtpHelperBadge">
-                    <div class="dev-badge-header">
-                        <span class="dev-pill">SMS & Email Simulation</span>
-                        <span class="dev-terminal-hint">Printed to Backend Console</span>
-                    </div>
-                    <div class="dev-otp-code-row">
-                        <span>OTP: <strong id="devOtpDisplay">------</strong></span>
-                        <button type="button" class="btn-copy-code" id="btnFillDevOtp">Auto-Paste</button>
-                    </div>
                 </div>
             </div>
         </div>
@@ -664,7 +672,7 @@
                             <h2 style="font-size: 1.35rem;">Family Members Vault</h2>
                             <p style="font-size: 0.85rem; color: var(--text-muted);">Manage family accounts, individual document access, and separate login credentials.</p>
                         </div>
-                        <button class="btn btn-primary" id="btnOpenAddMemberModal">
+                        <button class="btn btn-primary" id="addFamilyMemberBtn">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                                 <circle cx="9" cy="7" r="4"></circle>
@@ -1105,54 +1113,61 @@
     </div>
 
     <!-- Add Family Member Modal -->
-    <div class="modal-overlay" id="addMemberModal">
+    <div class="modal-overlay" id="addFamilyModal">
         <div class="modal-dialog" style="max-width: 520px;">
             <div class="modal-header">
-                <h3>Add Family Member</h3>
-                <button class="modal-close-btn" data-close-modal="addMemberModal">&times;</button>
+                <h3>Add Family Member / Create Account</h3>
+                <button class="modal-close-btn" data-close-modal="addFamilyModal">&times;</button>
             </div>
-            <form id="addMemberForm" novalidate>
+            <form id="addFamilyForm" novalidate>
                 <div class="modal-body">
                     <p style="font-size: 0.84rem; color: var(--text-muted); margin-bottom: 16px;">
-                        Create a dedicated profile for a family member so they can sign in independently.
+                        We will send a verification code to the family member's email before creating their account.
                     </p>
 
-                    <div style="display: flex; flex-direction: column; gap: 14px;">
+                    <div id="familyDetailsStep" style="display: flex; flex-direction: column; gap: 14px;">
                         <div class="form-group">
-                            <label class="form-label" for="memberFullName">Full Name <span class="required">*</span></label>
-                            <input type="text" class="form-control" id="memberFullName" required placeholder="e.g. Jane Doe">
-                            <div class="invalid-feedback" id="memberFullNameFeedback"></div>
+                            <label class="form-label" for="familyMemberName">Full Name <span class="required">*</span></label>
+                            <input type="text" class="form-control" id="familyMemberName" required maxlength="150" placeholder="e.g. Jane Doe">
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label" for="memberRelationship">Relationship <span class="required">*</span></label>
-                            <select class="form-control select-control" id="memberRelationship" required>
+                            <label class="form-label" for="familyMemberRelation">Relationship <span class="required">*</span></label>
+                            <select class="form-control select-control" id="familyMemberRelation" required>
                                 <option value="Spouse">Spouse</option>
-                                <option value="Father">Father</option>
-                                <option value="Mother">Mother</option>
                                 <option value="Child">Child</option>
+                                <option value="Parent">Parent</option>
                                 <option value="Sibling">Sibling</option>
-                                <option value="Self">Self</option>
                                 <option value="Other">Other</option>
                             </select>
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label" for="memberEmail">Email Address (Login ID) <span class="required">*</span></label>
-                            <input type="email" class="form-control" id="memberEmail" required placeholder="e.g. jane@docusafe.local">
-                            <div class="invalid-feedback" id="memberEmailFeedback"></div>
+                            <label class="form-label" for="familyMemberEmail">Email Address (Login ID) <span class="required">*</span></label>
+                            <input type="email" class="form-control" id="familyMemberEmail" required maxlength="255" placeholder="name@example.com">
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label" for="memberPassword">Password <span class="required">*</span></label>
-                            <input type="password" class="form-control" id="memberPassword" required placeholder="Minimum 4 characters">
-                            <div class="invalid-feedback" id="memberPasswordFeedback"></div>
+                            <label class="form-label" for="familyMemberPassword">Password <span class="required">*</span></label>
+                            <input type="password" class="form-control" id="familyMemberPassword" required minlength="4" maxlength="100" placeholder="At least 4 characters">
+                        </div>
+                    </div>
+                    <div id="familyOtpStep" style="display: none;">
+                        <p style="font-size: 0.9rem; color: var(--text-muted);">
+                            Enter the verification code sent to <strong id="familyOtpTargetEmail"></strong>.
+                        </p>
+                        <div class="form-group">
+                            <label class="form-label" for="familyOtpInput">Verification code</label>
+                            <input type="text" class="form-control" id="familyOtpInput" inputmode="numeric"
+                                   autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-close-modal="addMemberModal">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="btnSaveMember">Save Family Member</button>
+                    <button type="button" class="btn btn-secondary" data-close-modal="addFamilyModal">Cancel</button>
+                    <button type="button" class="btn btn-secondary" id="btnBackFamilyDetails" style="display: none;">← Back</button>
+                    <button type="submit" class="btn btn-primary" id="btnSendFamilyOtp">Send Verification OTP</button>
+                    <button type="button" class="btn btn-primary" id="btnConfirmFamilyOtp" style="display: none;">Verify &amp; Add to Vault</button>
                 </div>
             </form>
         </div>
@@ -1195,7 +1210,7 @@
 
                         <div class="form-group">
                             <label class="form-label" for="editMemberEmail">Email Address (Login ID) <span class="required">*</span></label>
-                            <input type="email" class="form-control" id="editMemberEmail" required placeholder="e.g. admin@docusafe.local">
+                            <input type="email" class="form-control" id="editMemberEmail" required placeholder="name@example.com">
                             <div class="invalid-feedback" id="editMemberEmailFeedback"></div>
                         </div>
                     </div>
@@ -1314,36 +1329,6 @@
     </div>
 
     <!-- Remove Family Member Confirmation Modal -->
-    <div class="modal-overlay" id="removeMemberModal">
-        <div class="modal-dialog" style="max-width: 460px;">
-            <div class="modal-header">
-                <h3>Remove Family Member</h3>
-                <button class="modal-close-btn" data-close-modal="removeMemberModal">&times;</button>
-            </div>
-            <div class="modal-body" style="text-align: center; padding: 24px;">
-                <div style="width: 56px; height: 56px; background:#fef2f2; color:#ef4444; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; margin-bottom:14px;">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                        <circle cx="8.5" cy="7" r="4"></circle>
-                        <line x1="18" y1="8" x2="23" y2="13"></line>
-                        <line x1="23" y1="8" x2="18" y2="13"></line>
-                    </svg>
-                </div>
-                <h4 style="margin-bottom: 8px;">Remove Member Account?</h4>
-                <p style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 12px;">
-                    Are you sure you want to remove <strong id="removeMemberTargetName">this member</strong>? Documents linked to this member will be unassigned or removed.
-                </p>
-                <div style="background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 10px 14px; font-size: 0.82rem; color: #be123c; text-align: left;">
-                    ⚠️ <strong>Irreversible Action:</strong> This family member vault will be permanently deleted from the database along with all associated document scans.
-                </div>
-            </div>
-            <div class="modal-footer" style="justify-content: center; gap: 10px;">
-                <button type="button" class="btn btn-secondary" data-close-modal="removeMemberModal">Cancel</button>
-                <button type="button" class="btn btn-danger" id="btnConfirmRemoveMember" style="background:#ef4444; color:#ffffff; border:none;">Remove Member</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Floating Expiring Soon Hover Popover -->
     <div class="expiring-hover-popover" id="expiringHoverPopover" style="display: none;">
         <div class="expiring-popover-header">
@@ -1363,7 +1348,7 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <!-- JavaScript Application Modules -->
-    <script src="/js/api.js?v=3.2"></script>
-    <script src="/js/app.js?v=3.2"></script>
+    <script src="/js/api.js?v=3.3"></script>
+    <script src="/js/app.js?v=3.3"></script>
 </body>
 </html>

@@ -2,261 +2,229 @@ package com.pdms.service;
 
 import com.pdms.dto.LoginInitiateRequest;
 import com.pdms.dto.LoginInitiateResponse;
+import com.pdms.entity.OtpVerification;
 import com.pdms.entity.User;
 import com.pdms.exception.BadRequestException;
+import com.pdms.exception.EmailDispatchException;
+import com.pdms.exception.TooManyRequestsException;
+import com.pdms.exception.UnauthorizedException;
+import com.pdms.repository.OtpVerificationRepository;
 import com.pdms.repository.UserRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
-import java.time.LocalDateTime;
-import java.util.Map;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @Transactional
 public class OtpService {
 
-    private static final Logger log = LoggerFactory.getLogger(OtpService.class);
     private static final int OTP_VALIDITY_MINUTES = 5;
+    private static final int RESEND_COOLDOWN_SECONDS = 60;
+    private static final int MAX_OTP_ATTEMPTS = 3;
+    private static final String SMTP_ERROR_MESSAGE =
+            "Failed to dispatch email. Please verify SMTP configuration.";
 
     private final UserRepository userRepository;
+    private final OtpVerificationRepository otpRepository;
+    private final EmailService emailService;
+    private final PasswordEncoder passwordEncoder;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    // In-memory pending OTP session cache
-    private final Map<String, PendingOtpSession> pendingSessions = new ConcurrentHashMap<>();
-
-    public OtpService(UserRepository userRepository) {
+    @Autowired
+    public OtpService(UserRepository userRepository, OtpVerificationRepository otpRepository,
+                      EmailService emailService, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
+        this.otpRepository = otpRepository;
+        this.emailService = emailService;
+        this.passwordEncoder = passwordEncoder;
     }
 
-    /**
-     * Pending OTP Session data class.
-     */
-    public static class PendingOtpSession {
-        private final String tempToken;
-        private final Long userId;
-        private String otpCode;
-        private LocalDateTime expiryTime;
-        private final String destination;
-
-        public PendingOtpSession(String tempToken, Long userId, String otpCode, LocalDateTime expiryTime, String destination) {
-            this.tempToken = tempToken;
-            this.userId = userId;
-            this.otpCode = otpCode;
-            this.expiryTime = expiryTime;
-            this.destination = destination;
+    public LoginInitiateResponse initiateLogin(String email, String password) {
+        if (email == null || email.isBlank() || !email.trim().matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+            throw new BadRequestException("Please enter a valid email address.");
         }
-
-        public String getTempToken() {
-            return tempToken;
-        }
-
-        public Long getUserId() {
-            return userId;
-        }
-
-        public String getOtpCode() {
-            return otpCode;
-        }
-
-        public void setOtpCode(String otpCode) {
-            this.otpCode = otpCode;
-        }
-
-        public LocalDateTime getExpiryTime() {
-            return expiryTime;
-        }
-
-        public void setExpiryTime(LocalDateTime expiryTime) {
-            this.expiryTime = expiryTime;
-        }
-
-        public String getDestination() {
-            return destination;
-        }
+        User user = userRepository.findByEmailIgnoreCase(email.trim())
+                .filter(existing -> password != null && existing.getPassword() != null
+                        && passwordEncoder.matches(password, existing.getPassword()))
+                .orElseThrow(() -> new UnauthorizedException(
+                        "Invalid email or password. Please try again."));
+        return startVerification(user);
     }
 
-    /**
-     * Initiates 2-step login: verifies identifier (email or mobile) and password,
-     * generates a 6-digit OTP, logs SMS & Email simulation banners, and saves OTP state.
-     */
     public LoginInitiateResponse initiateLogin(LoginInitiateRequest request) {
-        if (request.getIdentifier() == null || request.getIdentifier().isBlank()) {
-            throw new BadRequestException("Please enter your registered email or 10-digit mobile number.");
+        if (request == null || request.getIdentifier() == null || request.getIdentifier().isBlank()) {
+            throw new BadRequestException("Please enter a valid email address.");
         }
-        if (request.getPassword() == null || request.getPassword().isBlank()) {
-            throw new BadRequestException("Please enter your password.");
-        }
-
-        String rawIdentifier = request.getIdentifier().trim();
-        User user = userRepository.findByIdentifier(rawIdentifier)
-                .or(() -> userRepository.findByEmailIgnoreCase(rawIdentifier.toLowerCase()))
-                .or(() -> userRepository.findByMobileNumber(rawIdentifier))
-                .orElseThrow(() -> new BadRequestException("Invalid credentials. Please verify your email/mobile and password."));
-
-        if (!user.getPassword().equals(request.getPassword().trim())) {
-            throw new BadRequestException("Invalid credentials. Please verify your email/mobile and password.");
-        }
-
-        // Generate 6-digit OTP
-        String otp = generateNumericOtp();
-        LocalDateTime expiry = LocalDateTime.now().plusMinutes(OTP_VALIDITY_MINUTES);
-        String tempToken = UUID.randomUUID().toString();
-
-        // Update user record in database
-        user.setOtpCode(otp);
-        user.setOtpExpiry(expiry);
-        userRepository.save(user);
-
-        // Format masked destination
-        String maskedDestination = formatMaskedDestination(user);
-
-        // Cache session
-        PendingOtpSession session = new PendingOtpSession(tempToken, user.getId(), otp, expiry, maskedDestination);
-        pendingSessions.put(tempToken, session);
-
-        // Dispatch simulated SMS and Email
-        dispatchOtpSimulation(user, otp);
-
-        return new LoginInitiateResponse("OTP_REQUIRED", tempToken, maskedDestination, otp);
+        User user = userRepository.findByIdentifier(request.getIdentifier().trim())
+                .filter(existing -> request.getPassword() != null && existing.getPassword() != null
+                        && passwordEncoder.matches(request.getPassword(), existing.getPassword()))
+                .orElseThrow(() -> new UnauthorizedException(
+                        "Invalid email or password. Please try again."));
+        return startVerification(user);
     }
 
-    /**
-     * Verifies the 6-digit OTP code against the pending session token.
-     */
-    public User verifyOtp(String tempToken, String otpCode) {
-        if (tempToken == null || tempToken.isBlank()) {
-            throw new BadRequestException("Invalid session. Please return to login.");
+    public LoginInitiateResponse register(String fullName, String email, String password) {
+        if (fullName == null || fullName.isBlank()) {
+            throw new BadRequestException("Full name is required.");
         }
-        if (otpCode == null || otpCode.trim().length() != 6) {
-            throw new BadRequestException("Please enter a valid 6-digit verification OTP.");
+        if (email == null || email.isBlank() || !email.trim().matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+            throw new BadRequestException("Please enter a valid email address.");
         }
-
-        PendingOtpSession session = pendingSessions.get(tempToken.trim());
-        String cleanCode = otpCode.trim();
-
-        if (session == null) {
-            // Check fallback from DB
-            User dbUser = userRepository.findAll().stream()
-                    .filter(u -> cleanCode.equals(u.getOtpCode()) && u.getOtpExpiry() != null && LocalDateTime.now().isBefore(u.getOtpExpiry()))
-                    .findFirst()
-                    .orElseThrow(() -> new BadRequestException("Invalid or expired OTP. Please request a new code."));
-
-            dbUser.setOtpCode(null);
-            dbUser.setOtpExpiry(null);
-            return userRepository.save(dbUser);
+        if (password == null || password.length() < 8) {
+            throw new BadRequestException("Password must be at least 8 characters long.");
         }
 
-        if (LocalDateTime.now().isAfter(session.getExpiryTime())) {
-            pendingSessions.remove(tempToken);
-            throw new BadRequestException("OTP has expired. Please click 'Resend OTP' to receive a fresh code.");
+        String normalizedEmail = email.trim().toLowerCase();
+        if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
+            throw new BadRequestException("An account with this email already exists.");
         }
 
-        if (!session.getOtpCode().equals(cleanCode)) {
-            throw new BadRequestException("Invalid 6-digit OTP. Please check the code and try again.");
+        User user = new User();
+        user.setFullName(fullName.trim());
+        user.setEmail(normalizedEmail);
+        user.setPassword(passwordEncoder.encode(password));
+        user.setRelationship("Self");
+        user.setRole("ROLE_MEMBER");
+        user.setTheme("theme-default");
+        return startVerification(userRepository.save(user));
+    }
+
+    @Transactional(noRollbackFor = {BadRequestException.class, TooManyRequestsException.class})
+    public User verifyOtp(String emailOrToken, String otpCode) {
+        if (emailOrToken == null || emailOrToken.isBlank()) {
+            throw new BadRequestException("Email address or verification token is required.");
+        }
+        if (otpCode == null || !otpCode.trim().matches("\\d{6}")) {
+            throw new BadRequestException("Please enter a valid 6-digit verification code.");
         }
 
-        // Successfully verified
-        User user = userRepository.findById(session.getUserId())
-                .orElseThrow(() -> new BadRequestException("User record not found."));
+        OtpVerification verification = findVerification(emailOrToken.trim())
+                .orElseThrow(() -> new BadRequestException(
+                        "Verification code is invalid or expired. Please request a new code."));
+        Instant now = Instant.now();
+        if (verification.isUsed() && verification.getAttempts() < MAX_OTP_ATTEMPTS) {
+            throw new BadRequestException("Verification code is invalid or expired. Please request a new code.");
+        }
+        if (!now.isBefore(verification.getExpiresAt())) {
+            verification.setUsed(true);
+            otpRepository.save(verification);
+            throw new BadRequestException("Verification code has expired. Please request a new code.");
+        }
+        if (verification.getAttempts() >= MAX_OTP_ATTEMPTS) {
+            verification.setUsed(true);
+            otpRepository.save(verification);
+            throw new TooManyRequestsException("Too many failed attempts. Request a new OTP.");
+        }
+        if (!passwordEncoder.matches(otpCode.trim(), verification.getOtpHash())) {
+            int attempts = verification.getAttempts() + 1;
+            verification.setAttempts(attempts);
+            if (attempts >= MAX_OTP_ATTEMPTS) {
+                verification.setUsed(true);
+                otpRepository.save(verification);
+                throw new TooManyRequestsException("Too many failed attempts. Request a new OTP.");
+            }
+            otpRepository.save(verification);
+            throw new BadRequestException("Invalid verification code. "
+                    + (MAX_OTP_ATTEMPTS - attempts) + " attempt(s) remaining.");
+        }
 
-        user.setOtpCode(null);
-        user.setOtpExpiry(null);
-        userRepository.save(user);
-
-        pendingSessions.remove(tempToken);
-        log.info("Successfully verified 2FA OTP for user: {} ({})", user.getFullName(), user.getEmail());
-
+        User user = userRepository.findByEmailIgnoreCase(verification.getEmail())
+                .orElseThrow(() -> new BadRequestException("User account no longer exists."));
+        verification.setUsed(true);
+        verification.setVerificationToken(null);
+        otpRepository.save(verification);
         return user;
     }
 
-    /**
-     * Resends a fresh 6-digit OTP for an active pending session.
-     */
-    public LoginInitiateResponse resendOtp(String tempToken) {
-        if (tempToken == null || tempToken.isBlank()) {
-            throw new BadRequestException("Session token is missing. Please return to login.");
+    public LoginInitiateResponse resendOtp(String tokenOrEmail) {
+        if (tokenOrEmail == null || tokenOrEmail.isBlank()) {
+            throw new BadRequestException("Email address or verification token is required.");
+        }
+        OtpVerification verification = findVerification(tokenOrEmail.trim())
+                .orElseThrow(() -> new BadRequestException(
+                        "Verification session has expired. Please sign in again."));
+        if (verification.getVerificationToken() == null) {
+            throw new BadRequestException("Verification session has expired. Please sign in again.");
         }
 
-        PendingOtpSession session = pendingSessions.get(tempToken.trim());
-        if (session == null) {
-            throw new BadRequestException("Verification session has expired. Please enter your credentials again.");
+        Instant now = Instant.now();
+        Instant nextAllowedAt = verification.getCreatedAt().plusSeconds(RESEND_COOLDOWN_SECONDS);
+        if (now.isBefore(nextAllowedAt)) {
+            long secondsRemaining = Math.max(1, (Duration.between(now, nextAllowedAt).toMillis() + 999) / 1000);
+            throw new TooManyRequestsException(
+                    "Please wait " + secondsRemaining + " seconds before requesting another code.");
         }
 
-        User user = userRepository.findById(session.getUserId())
-                .orElseThrow(() -> new BadRequestException("User record not found."));
+        User user = userRepository.findByEmailIgnoreCase(verification.getEmail())
+                .orElseThrow(() -> new BadRequestException("User account no longer exists."));
+        String otp = generateNumericOtp();
+        sendOtp(verification.getEmail(), otp, user.getFullName());
 
-        String newOtp = generateNumericOtp();
-        LocalDateTime newExpiry = LocalDateTime.now().plusMinutes(OTP_VALIDITY_MINUTES);
+        verification.setOtpHash(passwordEncoder.encode(otp));
+        verification.setExpiresAt(now.plus(OTP_VALIDITY_MINUTES, ChronoUnit.MINUTES));
+        verification.setAttempts(0);
+        verification.setUsed(false);
+        verification.setCreatedAt(now);
+        otpRepository.save(verification);
 
-        session.setOtpCode(newOtp);
-        session.setExpiryTime(newExpiry);
+        LoginInitiateResponse response = new LoginInitiateResponse(
+                "OTP_REQUIRED", verification.getVerificationToken(), maskEmail(verification.getEmail()));
+        response.setEmail(verification.getEmail());
+        return response;
+    }
 
-        user.setOtpCode(newOtp);
-        user.setOtpExpiry(newExpiry);
-        userRepository.save(user);
+    private LoginInitiateResponse startVerification(User user) {
+        String email = user.getEmail().trim().toLowerCase();
+        otpRepository.findAllByEmailIgnoreCaseAndUsedFalse(email).forEach(existing -> {
+            existing.setUsed(true);
+            existing.setVerificationToken(null);
+        });
 
-        dispatchOtpSimulation(user, newOtp);
+        String otp = generateNumericOtp();
+        String token = UUID.randomUUID().toString();
+        sendOtp(email, otp, user.getFullName());
 
-        return new LoginInitiateResponse("OTP_REQUIRED", tempToken, session.getDestination(), newOtp);
+        Instant now = Instant.now();
+        OtpVerification verification = new OtpVerification(
+                email,
+                passwordEncoder.encode(otp),
+                now.plus(OTP_VALIDITY_MINUTES, ChronoUnit.MINUTES),
+                token);
+        verification.setCreatedAt(now);
+        otpRepository.save(verification);
+
+        LoginInitiateResponse response = new LoginInitiateResponse("OTP_REQUIRED", token, maskEmail(email));
+        response.setEmail(email);
+        return response;
+    }
+
+    private void sendOtp(String email, String otp, String fullName) {
+        if (emailService == null || !emailService.sendOtpEmail(email, otp, fullName)) {
+            throw new EmailDispatchException(SMTP_ERROR_MESSAGE);
+        }
+    }
+
+    private java.util.Optional<OtpVerification> findVerification(String identifier) {
+        if (identifier.contains("@")) {
+            return otpRepository.findTopByEmailIgnoreCaseOrderByCreatedAtDescIdDesc(identifier);
+        }
+        return otpRepository.findByVerificationToken(identifier);
     }
 
     private String generateNumericOtp() {
-        int code = 100000 + secureRandom.nextInt(900000);
-        return String.valueOf(code);
-    }
-
-    private String formatMaskedDestination(User user) {
-        String email = user.getEmail();
-        String mobile = user.getMobileNumber();
-
-        String maskedEmail = maskEmail(email);
-        String maskedMobile = maskMobile(mobile);
-
-        if (maskedEmail != null && maskedMobile != null) {
-            return maskedEmail + " / " + maskedMobile;
-        } else if (maskedEmail != null) {
-            return maskedEmail;
-        } else if (maskedMobile != null) {
-            return maskedMobile;
-        }
-        return "your registered email/mobile";
+        return Integer.toString(secureRandom.nextInt(900_000) + 100_000);
     }
 
     private String maskEmail(String email) {
-        if (email == null || !email.contains("@")) return email;
-        String[] parts = email.split("@");
-        String name = parts[0];
-        String domain = parts[1];
-        if (name.length() <= 2) {
-            return name.charAt(0) + "***@" + domain;
-        }
-        return name.charAt(0) + "***" + name.charAt(name.length() - 1) + "@" + domain;
-    }
-
-    private String maskMobile(String mobile) {
-        if (mobile == null || mobile.isBlank()) return null;
-        String clean = mobile.replaceAll("[^0-9]", "");
-        if (clean.length() <= 4) return clean;
-        return "******" + clean.substring(clean.length() - 4);
-    }
-
-    private void dispatchOtpSimulation(User user, String otp) {
-        String mobile = (user.getMobileNumber() != null && !user.getMobileNumber().isBlank())
-                ? user.getMobileNumber() : "9876543210";
-        String email = user.getEmail();
-
-        System.out.println();
-        System.out.println("========================================================================");
-        System.out.println("  [SMS GATEWAY SIMULATION] OTP for +91 " + mobile + " is: " + otp);
-        System.out.println("  [EMAIL GATEWAY SIMULATION] Sent to " + email + " | 6-Digit OTP: " + otp);
-        System.out.println("  [DOCUSAFE 2FA] Validity: 5 Minutes. Do not share this code.");
-        System.out.println("========================================================================");
-        System.out.println();
+        int at = email.indexOf('@');
+        String localPart = email.substring(0, at);
+        return localPart.substring(0, 1) + "***" + email.substring(at);
     }
 }
-

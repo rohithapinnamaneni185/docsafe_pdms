@@ -23,10 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
         trashDocuments: [],
         permanentDeleteTargetId: null,
 
-        // Remove Member Modal State
-        removeMemberTargetId: null,
-        removeMemberTargetName: '',
-
         // Expiry Calendar System
         calendarMonth: new Date().getMonth(),
         calendarYear: new Date().getFullYear(),
@@ -43,7 +39,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Two-Factor Authentication & Login State
         tempToken: null,
         otpTimer: null,
-        otpCountdown: 30
+        otpCountdown: 60,
+        authMode: 'signin'
     };
 
     // DOM Elements Cache
@@ -151,15 +148,19 @@ document.addEventListener('DOMContentLoaded', () => {
         btnEmptyResetFilters: document.getElementById('btnEmptyResetFilters'),
 
         // Family Members View Elements
-        btnOpenAddMemberModal: document.getElementById('btnOpenAddMemberModal'),
+        btnOpenAddMemberModal: document.getElementById('addFamilyMemberBtn'),
         membersGridContainer: document.getElementById('membersGridContainer'),
-        addMemberModal: document.getElementById('addMemberModal'),
-        addMemberForm: document.getElementById('addMemberForm'),
-        memberFullName: document.getElementById('memberFullName'),
-        memberRelationship: document.getElementById('memberRelationship'),
-        memberEmail: document.getElementById('memberEmail'),
-        memberPassword: document.getElementById('memberPassword'),
-        btnSaveMember: document.getElementById('btnSaveMember'),
+        addMemberModal: document.getElementById('addFamilyModal'),
+        addMemberForm: document.getElementById('addFamilyForm'),
+        memberFullName: document.getElementById('familyMemberName'),
+        memberRelationship: document.getElementById('familyMemberRelation'),
+        memberEmail: document.getElementById('familyMemberEmail'),
+        memberPassword: document.getElementById('familyMemberPassword'),
+        btnSendFamilyOtp: document.getElementById('btnSendFamilyOtp'),
+        btnConfirmFamilyOtp: document.getElementById('btnConfirmFamilyOtp'),
+        btnBackFamilyDetails: document.getElementById('btnBackFamilyDetails'),
+        familyOtpInput: document.getElementById('familyOtpInput'),
+        familyOtpTargetEmail: document.getElementById('familyOtpTargetEmail'),
 
         // Form Elements
         documentForm: document.getElementById('documentForm'),
@@ -221,31 +222,29 @@ document.addEventListener('DOMContentLoaded', () => {
         premiumUpgradeModal: document.getElementById('premiumUpgradeModal'),
         btnUpgradePremium: document.getElementById('btnUpgradePremium'),
 
-        // Remove Family Member Modal
-        removeMemberModal: document.getElementById('removeMemberModal'),
-        removeMemberTargetName: document.getElementById('removeMemberTargetName'),
-        btnConfirmRemoveMember: document.getElementById('btnConfirmRemoveMember'),
-
         // Two-Factor Authentication & Login Elements
         loginOverlay: document.getElementById('loginOverlay'),
         loginStep1Card: document.getElementById('loginStep1Card'),
         loginStep2Card: document.getElementById('loginStep2Card'),
         formLoginStep1: document.getElementById('formLoginStep1'),
-        loginIdentifier: document.getElementById('loginIdentifier'),
-        loginPassword: document.getElementById('loginPassword'),
-        btnInitiateLogin: document.getElementById('btnInitiateLogin'),
-        btnFillDemoCreds: document.getElementById('btnFillDemoCreds'),
+        authAlert: document.getElementById('authAlert'),
+        fullNameGroup: document.getElementById('fullNameGroup'),
+        fullNameInput: document.getElementById('fullName'),
+        btnSignInMode: document.getElementById('btnSignInMode'),
+        btnRegisterMode: document.getElementById('btnRegisterMode'),
+        emailInput: document.getElementById('email') || document.getElementById('loginIdentifier'),
+        passwordInput: document.getElementById('password') || document.getElementById('loginPassword'),
+        sendOtpBtn: document.getElementById('sendOtpBtn') || document.getElementById('btnInitiateLogin'),
         formLoginStep2: document.getElementById('formLoginStep2'),
+        otpSubtitle: document.getElementById('otpSubtitle'),
         otpDestinationText: document.getElementById('otpDestinationText'),
+        otpBoxesContainer: document.getElementById('otpBoxesContainer'),
         otpInput: document.getElementById('otpInput'),
-        btnVerifyOtp: document.getElementById('btnVerifyOtp'),
+        verifyOtpBtn: document.getElementById('verifyOtpBtn') || document.getElementById('btnVerifyOtp'),
         otpTimerText: document.getElementById('otpTimerText'),
         otpCountdownWrapper: document.getElementById('otpCountdownWrapper'),
         btnResendOtp: document.getElementById('btnResendOtp'),
         btnBackToStep1: document.getElementById('btnBackToStep1'),
-        devOtpHelperBadge: document.getElementById('devOtpHelperBadge'),
-        devOtpDisplay: document.getElementById('devOtpDisplay'),
-        btnFillDevOtp: document.getElementById('btnFillDevOtp'),
         btnLogout: document.getElementById('btnLogout'),
 
         toastContainer: document.getElementById('toastContainer')
@@ -305,6 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
        TWO-STEP AUTHENTICATION & OTP WORKFLOW (2FA)
        ------------------------------------------------------------------ */
     function showLoginOverlay() {
+        setAuthMode('signin');
         if (el.appMainContainer) {
             el.appMainContainer.style.display = 'none';
         }
@@ -313,11 +313,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (el.loginStep1Card) el.loginStep1Card.style.display = 'block';
         if (el.loginStep2Card) el.loginStep2Card.style.display = 'none';
+        setAuthAlert(null);
         if (state.otpTimer) {
             clearInterval(state.otpTimer);
             state.otpTimer = null;
         }
-        if (el.loginPassword) el.loginPassword.value = '';
+        const pwd = el.passwordInput || document.getElementById('password') || document.getElementById('loginPassword');
+        if (pwd) pwd.value = '';
     }
 
     function hideLoginOverlay() {
@@ -333,191 +335,337 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function startOtpCountdown() {
+    function setAuthAlert(message, type = 'danger') {
+        const alertEl = el.authAlert || document.getElementById('authAlert');
+        if (!alertEl) return;
+        if (!message) {
+            alertEl.style.display = 'none';
+            alertEl.textContent = '';
+            alertEl.className = 'auth-alert';
+            return;
+        }
+        alertEl.textContent = message;
+        alertEl.className = `auth-alert alert-${type === 'success' ? 'success' : 'danger'}`;
+        alertEl.style.display = 'block';
+    }
+
+    function setupOtpDigitInputs() {
+        const digits = Array.from(document.querySelectorAll('.otp-digit'));
+        const hiddenOtp = el.otpInput || document.getElementById('otpInput');
+        if (!digits.length) return;
+
+        digits.forEach((input, index) => {
+            input.addEventListener('input', (e) => {
+                const val = e.target.value.replace(/[^0-9]/g, '');
+                e.target.value = val ? val[val.length - 1] : '';
+                syncDigitsToInput();
+                if (val && index < digits.length - 1) {
+                    digits[index + 1].focus();
+                }
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                    digits[index - 1].focus();
+                }
+            });
+
+            input.addEventListener('paste', (e) => {
+                e.preventDefault();
+                const pasteData = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '').slice(0, 6);
+                if (pasteData) {
+                    pasteData.split('').forEach((ch, i) => {
+                        if (digits[i]) digits[i].value = ch;
+                    });
+                    syncDigitsToInput();
+                    const nextIdx = Math.min(pasteData.length, digits.length - 1);
+                    digits[nextIdx].focus();
+                }
+            });
+        });
+
+        function syncDigitsToInput() {
+            const code = digits.map(d => d.value.trim()).join('');
+            if (hiddenOtp) hiddenOtp.value = code;
+            return code;
+        }
+    }
+
+    function getEnteredOtp() {
+        const digits = Array.from(document.querySelectorAll('.otp-digit'));
+        if (digits.length) {
+            const code = digits.map(d => d.value.trim()).join('');
+            if (code) return code;
+        }
+        const hiddenOtp = el.otpInput || document.getElementById('otpInput');
+        return hiddenOtp ? hiddenOtp.value.trim() : '';
+    }
+
+    function clearOtpDigits() {
+        const digits = document.querySelectorAll('.otp-digit');
+        digits.forEach(d => d.value = '');
+        const hiddenOtp = el.otpInput || document.getElementById('otpInput');
+        if (hiddenOtp) hiddenOtp.value = '';
+        if (digits[0]) digits[0].focus();
+    }
+
+    function startOtpCountdown(seconds = 60) {
         if (state.otpTimer) {
             clearInterval(state.otpTimer);
             state.otpTimer = null;
         }
-        state.otpCountdown = 30;
-        if (el.otpTimerText) el.otpTimerText.textContent = '30s';
-        if (el.otpCountdownWrapper) el.otpCountdownWrapper.style.display = 'inline';
-        if (el.btnResendOtp) el.btnResendOtp.style.display = 'none';
+        let countdown = seconds;
+        const timerText = el.otpTimerText || document.getElementById('otpTimerText');
+        const countdownWrapper = el.otpCountdownWrapper || document.getElementById('otpCountdownWrapper');
+        const resendBtn = el.btnResendOtp || document.getElementById('btnResendOtp');
+
+        if (timerText) timerText.textContent = formatOtpCountdown(countdown);
+        if (countdownWrapper) countdownWrapper.style.display = 'inline-block';
+        if (resendBtn) {
+            resendBtn.style.display = 'none';
+            resendBtn.disabled = true;
+        }
 
         state.otpTimer = setInterval(() => {
-            state.otpCountdown--;
-            if (el.otpTimerText) el.otpTimerText.textContent = `${state.otpCountdown}s`;
-            if (state.otpCountdown <= 0) {
+            countdown -= 1;
+            if (timerText) timerText.textContent = formatOtpCountdown(countdown);
+            if (countdown <= 0) {
                 clearInterval(state.otpTimer);
                 state.otpTimer = null;
-                if (el.otpCountdownWrapper) el.otpCountdownWrapper.style.display = 'none';
-                if (el.btnResendOtp) el.btnResendOtp.style.display = 'inline-block';
+                if (countdownWrapper) countdownWrapper.style.display = 'none';
+                if (resendBtn) {
+                    resendBtn.style.display = 'inline-block';
+                    resendBtn.disabled = false;
+                    resendBtn.textContent = 'Resend Code';
+                }
             }
         }, 1000);
     }
 
-    function setupAuthWorkflow() {
-        // Step 1: Submit email/mobile and password
-        if (el.formLoginStep1) {
-            el.formLoginStep1.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const identifier = el.loginIdentifier.value.trim();
-                const password = el.loginPassword.value;
+    function formatOtpCountdown(totalSeconds) {
+        const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+        const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+        return `${minutes}:${seconds}`;
+    }
 
-                if (!identifier || !password) {
-                    showToast('Please enter your email or mobile number and password.', 'warning');
+    function setAuthMode(mode) {
+        state.authMode = mode;
+        const isRegister = mode === 'register';
+        if (el.fullNameGroup) el.fullNameGroup.style.display = isRegister ? 'block' : 'none';
+        if (el.fullNameInput) el.fullNameInput.required = isRegister;
+        if (el.btnSignInMode) {
+            el.btnSignInMode.classList.toggle('active', !isRegister);
+            el.btnSignInMode.setAttribute('aria-selected', String(!isRegister));
+        }
+        if (el.btnRegisterMode) {
+            el.btnRegisterMode.classList.toggle('active', isRegister);
+            el.btnRegisterMode.setAttribute('aria-selected', String(isRegister));
+        }
+        const buttonText = el.sendOtpBtn && el.sendOtpBtn.querySelector('.btn-text');
+        if (el.passwordInput) el.passwordInput.minLength = isRegister ? 8 : 0;
+        if (buttonText) {
+            buttonText.textContent = isRegister
+                ? 'Create Account & Send OTP'
+                : 'Continue & Send OTP';
+        }
+        setAuthAlert(null);
+    }
+
+    function setupAuthWorkflow() {
+        setupOtpDigitInputs();
+
+        if (el.btnSignInMode) {
+            el.btnSignInMode.addEventListener('click', () => setAuthMode('signin'));
+        }
+        if (el.btnRegisterMode) {
+            el.btnRegisterMode.addEventListener('click', () => setAuthMode('register'));
+        }
+
+        // Step 1: Submit email and password -> Continue & Send OTP
+        const step1Form = el.formLoginStep1 || document.getElementById('formLoginStep1');
+        if (step1Form) {
+            step1Form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                setAuthAlert(null);
+
+                const emailEl = el.emailInput || document.getElementById('email') || document.getElementById('loginIdentifier');
+                const passwordEl = el.passwordInput || document.getElementById('password') || document.getElementById('loginPassword');
+                const sendBtn = el.sendOtpBtn || document.getElementById('sendOtpBtn') || document.getElementById('btnInitiateLogin');
+
+                const email = emailEl ? emailEl.value.trim() : '';
+                const password = passwordEl ? passwordEl.value : '';
+                const fullName = el.fullNameInput ? el.fullNameInput.value.trim() : '';
+
+                if (!email || !password) {
+                    setAuthAlert('Please enter your email and password.', 'danger');
+                    return;
+                }
+                if (state.authMode === 'register' && !fullName) {
+                    setAuthAlert('Please enter your full name.', 'danger');
                     return;
                 }
 
-                const originalBtnHtml = el.btnInitiateLogin.innerHTML;
-                el.btnInitiateLogin.disabled = true;
-                el.btnInitiateLogin.innerHTML = '<span>Sending Code...</span>';
+                const originalBtnHtml = sendBtn ? sendBtn.innerHTML : 'Continue & Send OTP';
+                if (sendBtn) {
+                    sendBtn.disabled = true;
+                    sendBtn.innerHTML = '<span class="btn-spinner"></span><span>Verifying credentials &amp; sending OTP...</span>';
+                }
 
                 try {
-                    const res = await API.loginInitiate(identifier, password);
-                    if (res && res.success && res.data) {
-                        state.tempToken = res.data.tempToken;
-                        
-                        if (el.otpDestinationText) {
-                            el.otpDestinationText.textContent = res.data.destination || identifier;
-                        }
+                    const res = state.authMode === 'register'
+                        ? await API.register(fullName, email, password)
+                        : await API.loginInit(email, password);
+                    if (res && res.success) {
+                        state.activeEmail = email;
+                        state.tempToken = res.token || (res.data && res.data.tempToken);
 
-                        // Demo Helper simulation display
-                        if (res.data.debugOtp && el.devOtpDisplay) {
-                            el.devOtpDisplay.textContent = res.data.debugOtp;
+                        // Update destination in step 2
+                        const destText = el.otpDestinationText || document.getElementById('otpDestinationText');
+                        if (destText) {
+                            destText.textContent = res.email || (res.data && res.data.email)
+                                || (res.data && res.data.destination) || email;
                         }
 
                         // Transition to Step 2
-                        if (el.loginStep1Card) el.loginStep1Card.style.display = 'none';
-                        if (el.loginStep2Card) el.loginStep2Card.style.display = 'block';
-                        if (el.otpInput) {
-                            el.otpInput.value = '';
-                            el.otpInput.focus();
-                        }
+                        const step1Card = el.loginStep1Card || document.getElementById('loginStep1Card');
+                        const step2Card = el.loginStep2Card || document.getElementById('loginStep2Card');
+                        if (step1Card) step1Card.style.display = 'none';
+                        if (step2Card) step2Card.style.display = 'block';
 
-                        startOtpCountdown();
-                        showToast('6-digit verification code dispatched!', 'success');
+                        clearOtpDigits();
+                        startOtpCountdown(60);
+                        setAuthAlert(res.message || 'Verification code sent to your email.', 'success');
                     } else {
-                        showToast((res && res.message) || 'Authentication failed. Please check your credentials.', 'error');
+                        setAuthAlert((res && res.message) || 'Unable to send the verification code.', 'danger');
                     }
                 } catch (error) {
-                    showToast(error.message || 'Unable to authenticate. Please check your credentials.', 'error');
+                    setAuthAlert(error.message || 'Unable to send the verification code.', 'danger');
                 } finally {
-                    el.btnInitiateLogin.disabled = false;
-                    el.btnInitiateLogin.innerHTML = originalBtnHtml;
+                    if (sendBtn) {
+                        sendBtn.disabled = false;
+                        sendBtn.innerHTML = originalBtnHtml;
+                    }
                 }
             });
         }
 
-        // Autofill Demo Administrator Credentials
-        if (el.btnFillDemoCreds) {
-            el.btnFillDemoCreds.addEventListener('click', () => {
-                if (el.loginIdentifier) el.loginIdentifier.value = 'admin@docusafe.local';
-                if (el.loginPassword) el.loginPassword.value = 'admin123';
-                showToast('Autofilled demo administrator credentials', 'info');
-                if (el.loginIdentifier) el.loginIdentifier.focus();
-            });
-        }
-
-        // Auto-paste Simulated Demo OTP
-        if (el.btnFillDevOtp) {
-            el.btnFillDevOtp.addEventListener('click', () => {
-                const code = el.devOtpDisplay ? el.devOtpDisplay.textContent.trim() : '';
-                if (code && code !== '------' && el.otpInput) {
-                    el.otpInput.value = code;
-                    el.otpInput.focus();
-                    showToast('Pasted demo OTP code: ' + code, 'info');
-                }
-            });
-        }
-
-        // Step 2: Submit 6-digit OTP
-        if (el.formLoginStep2) {
-            el.formLoginStep2.addEventListener('submit', async (e) => {
+        // Step 2: Submit 6-digit OTP -> Verify & Unlock Vault
+        const step2Form = el.formLoginStep2 || document.getElementById('formLoginStep2');
+        if (step2Form) {
+            step2Form.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const otp = el.otpInput.value.trim();
+                setAuthAlert(null);
 
-                if (!state.tempToken) {
-                    showToast('Session token expired. Please return to login.', 'warning');
-                    if (el.loginStep2Card) el.loginStep2Card.style.display = 'none';
-                    if (el.loginStep1Card) el.loginStep1Card.style.display = 'block';
-                    return;
-                }
-
+                const otp = getEnteredOtp();
                 if (!otp || otp.length !== 6) {
-                    showToast('Please enter the full 6-digit verification code.', 'warning');
+                    setAuthAlert('Please enter the full 6-digit verification code.', 'danger');
                     return;
                 }
 
-                const originalBtnHtml = el.btnVerifyOtp.innerHTML;
-                el.btnVerifyOtp.disabled = true;
-                el.btnVerifyOtp.innerHTML = '<span>Verifying...</span>';
+                const email = state.activeEmail || (el.emailInput ? el.emailInput.value.trim() : '');
+                const verifyBtn = el.verifyOtpBtn || document.getElementById('verifyOtpBtn') || document.getElementById('btnVerifyOtp');
+
+                const originalBtnHtml = verifyBtn ? verifyBtn.innerHTML : 'Verify & Unlock Vault';
+                if (verifyBtn) {
+                    verifyBtn.disabled = true;
+                    verifyBtn.innerHTML = '<span class="btn-spinner"></span><span>Verifying...</span>';
+                }
 
                 try {
-                    const res = await API.verifyOtp(state.tempToken, otp);
-                    if (res && res.success && res.data) {
-                        showToast(`Welcome back, ${res.data.fullName}!`, 'success');
-                        hideLoginOverlay();
-                        setActiveUser(res.data);
+                    const res = await API.verifyOtp(state.tempToken || email, otp);
+                    if (res && res.success) {
+                        const userProfile = res.user || res.data;
+                        const sessionToken = res.token || (res.data && res.data.token);
+
+                        // Store session token and user profile
+                        if (sessionToken) {
+                            sessionStorage.setItem('docusafe_auth_token', sessionToken);
+                            localStorage.setItem('docusafe_auth_token', sessionToken);
+                        }
+                        if (userProfile) {
+                            sessionStorage.setItem('docusafe_user', JSON.stringify(userProfile));
+                            localStorage.setItem('docusafe_user', JSON.stringify(userProfile));
+                        }
+
+                        setAuthAlert('Authenticated successfully! Unlocking vault...', 'success');
+                        setTimeout(() => {
+                            hideLoginOverlay();
+                            if (userProfile) {
+                                setActiveUser(userProfile);
+                            }
+                        }, 400);
                     } else {
-                        showToast((res && res.message) || 'Invalid or expired verification code.', 'error');
-                        if (el.otpInput) el.otpInput.select();
+                        setAuthAlert(error.message || 'Invalid or expired code. Please try again.', 'danger');
+                        clearOtpDigits();
                     }
                 } catch (error) {
-                    showToast(error.message || 'Verification failed. Please check the code.', 'error');
-                    if (el.otpInput) el.otpInput.select();
+                    setAuthAlert('Invalid or expired code. Please try again.', 'danger');
+                    clearOtpDigits();
                 } finally {
-                    el.btnVerifyOtp.disabled = false;
-                    el.btnVerifyOtp.innerHTML = originalBtnHtml;
+                    if (verifyBtn) {
+                        verifyBtn.disabled = false;
+                        verifyBtn.innerHTML = originalBtnHtml;
+                    }
                 }
             });
         }
 
         // Resend OTP
-        if (el.btnResendOtp) {
-            el.btnResendOtp.addEventListener('click', async () => {
-                if (!state.tempToken) {
-                    showToast('Session expired. Please return to login.', 'warning');
+        const resendBtn = el.btnResendOtp || document.getElementById('btnResendOtp');
+        if (resendBtn) {
+            resendBtn.addEventListener('click', async () => {
+                const verificationToken = state.tempToken;
+                if (!verificationToken) {
+                    setAuthAlert('Session expired. Please return to sign in.', 'danger');
                     return;
                 }
 
-                el.btnResendOtp.disabled = true;
-                el.btnResendOtp.textContent = 'Resending...';
+                resendBtn.disabled = true;
+                resendBtn.textContent = 'Resending...';
 
                 try {
-                    const res = await API.resendOtp(state.tempToken);
-                    if (res && res.success && res.data) {
-                        if (res.data.debugOtp && el.devOtpDisplay) {
-                            el.devOtpDisplay.textContent = res.data.debugOtp;
-                        }
-                        showToast('Fresh 6-digit verification code sent!', 'success');
-                        startOtpCountdown();
-                        if (el.otpInput) {
-                            el.otpInput.value = '';
-                            el.otpInput.focus();
-                        }
+                    const res = await API.resendOtp(verificationToken);
+                    if (res && res.success) {
+                        state.tempToken = res.token || (res.data && res.data.tempToken) || verificationToken;
+                        setAuthAlert(res.message || 'A new code has been sent to your email.', 'success');
+                        clearOtpDigits();
+                        startOtpCountdown(60);
                     } else {
-                        showToast((res && res.message) || 'Failed to resend code.', 'error');
+                        setAuthAlert((res && res.message) || 'Failed to resend OTP.', 'danger');
                     }
                 } catch (error) {
-                    showToast(error.message || 'Failed to resend OTP.', 'error');
+                    setAuthAlert(error.message || 'Failed to resend OTP.', 'danger');
+                    const cooldown = Number((error.message || '').match(/wait (\d+) seconds/i)?.[1]);
+                    if (error.status === 429 && cooldown > 0) startOtpCountdown(cooldown);
                 } finally {
-                    el.btnResendOtp.disabled = false;
-                    el.btnResendOtp.textContent = 'Resend Code';
+                    if (state.otpTimer) {
+                        resendBtn.disabled = true;
+                        resendBtn.textContent = 'Resend Code';
+                    } else {
+                        resendBtn.disabled = false;
+                        resendBtn.textContent = 'Resend Code';
+                    }
                 }
             });
         }
 
         // Back to Step 1
-        if (el.btnBackToStep1) {
-            el.btnBackToStep1.addEventListener('click', () => {
+        const backBtn = el.btnBackToStep1 || document.getElementById('btnBackToStep1');
+        if (backBtn) {
+            backBtn.addEventListener('click', () => {
                 if (state.otpTimer) {
                     clearInterval(state.otpTimer);
                     state.otpTimer = null;
                 }
+                setAuthAlert(null);
                 state.tempToken = null;
-                if (el.loginStep2Card) el.loginStep2Card.style.display = 'none';
-                if (el.loginStep1Card) el.loginStep1Card.style.display = 'block';
-                if (el.loginIdentifier) el.loginIdentifier.focus();
+                setAuthMode('signin');
+                const step1Card = el.loginStep1Card || document.getElementById('loginStep1Card');
+                const step2Card = el.loginStep2Card || document.getElementById('loginStep2Card');
+                if (step2Card) step2Card.style.display = 'none';
+                if (step1Card) step1Card.style.display = 'block';
+                const emailEl = el.emailInput || document.getElementById('email') || document.getElementById('loginIdentifier');
+                if (emailEl) emailEl.focus();
             });
         }
 
@@ -929,7 +1077,7 @@ document.addEventListener('DOMContentLoaded', () => {
             card.className = 'member-card';
             const initials = getInitials(member.fullName);
             const isSelf = state.currentUser && state.currentUser.id === member.id;
-            const isAdminMember = Boolean(member.admin || (member.role && member.role === 'ROLE_ADMIN') || (member.relationship && member.relationship.toLowerCase() === 'self'));
+            const isAdminMember = Boolean(member.admin || (member.role && member.role.toUpperCase() === 'ROLE_ADMIN'));
             const canEdit = (state.currentUser && state.currentUser.admin) || isSelf;
             const canRemove = Boolean(state.currentUser && state.currentUser.admin && !isSelf && !isAdminMember);
 
@@ -965,12 +1113,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         </button>
                     ` : ''}
                     ${canRemove ? `
-                        <button class="btn btn-sm btn-remove-member" title="Remove Member" onclick="deleteFamilyMember(${member.id}, '${escapeQuote(member.fullName)}')">
-                            Remove
+                        <button class="btn btn-sm btn-remove-member" title="Delete Member">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6l-1 14H6L5 6"></path>
+                                <path d="M10 11v6M14 11v6"></path>
+                                <path d="M9 6V4h6v2"></path>
+                            </svg>
+                            Delete Member
                         </button>
                     ` : ''}
                 </div>
             `;
+            const removeButton = card.querySelector('.btn-remove-member');
+            if (removeButton) {
+                removeButton.addEventListener('click', () =>
+                    window.confirmDeleteFamilyMember(member.id, member.fullName));
+            }
             el.membersGridContainer.appendChild(card);
         });
     }
@@ -1043,6 +1202,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setupFamilyMemberModals() {
+        let pendingMemberDetails = null;
+        const memberFields = document.getElementById('familyDetailsStep');
+        const memberOtpStep = document.getElementById('familyOtpStep');
+
         if (el.btnOpenAddMemberModal) {
             el.btnOpenAddMemberModal.addEventListener('click', () => {
                 if (getNonSelfMembersCount() >= 3) {
@@ -1050,12 +1213,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 el.addMemberForm.reset();
+                pendingMemberDetails = null;
+                if (memberFields) memberFields.style.display = 'flex';
+                if (memberOtpStep) memberOtpStep.style.display = 'none';
+                el.btnSendFamilyOtp.style.display = 'inline-flex';
+                el.btnSendFamilyOtp.disabled = false;
+                el.btnConfirmFamilyOtp.style.display = 'none';
+                el.btnConfirmFamilyOtp.disabled = false;
+                el.btnBackFamilyDetails.style.display = 'none';
                 clearValidationErrors();
                 openModal(el.addMemberModal);
             });
         }
 
-        // Add Member Form Submission
+        el.btnBackFamilyDetails.addEventListener('click', () => {
+            pendingMemberDetails = null;
+            if (memberFields) memberFields.style.display = 'flex';
+            if (memberOtpStep) memberOtpStep.style.display = 'none';
+            el.btnSendFamilyOtp.style.display = 'inline-flex';
+            el.btnConfirmFamilyOtp.style.display = 'none';
+            el.btnBackFamilyDetails.style.display = 'none';
+        });
+
         el.addMemberForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             if (getNonSelfMembersCount() >= 3) {
@@ -1064,22 +1243,63 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const fullName = el.memberFullName.value.trim();
+            const name = el.memberFullName.value.trim();
             const relationship = el.memberRelationship.value;
-            const email = el.memberEmail.value.trim();
+            const email = el.memberEmail.value.trim().toLowerCase();
             const password = el.memberPassword.value.trim();
 
-            if (!fullName || !email || !password) {
-                showToast('Validation Error', 'Please fill in all required fields.', 'error');
+            if (!name || !relationship || !email || password.length < 4
+                    || !el.memberEmail.validity.valid) {
+                showToast('Validation Error', 'Enter a name, relationship, valid email, and password of at least 4 characters.', 'error');
                 return;
             }
 
-            el.btnSaveMember.disabled = true;
-            el.btnSaveMember.textContent = 'Creating Account...';
+            pendingMemberDetails = { name, relationship, email, password };
+            el.btnSendFamilyOtp.disabled = true;
+            el.btnSendFamilyOtp.textContent = 'Sending Verification OTP...';
 
             try {
-                const res = await API.addFamilyMember({ fullName, relationship, email, password });
-                showToast('Member Added', `Account for '${res.data.fullName}' created successfully.`, 'success');
+                await API.initiateFamilyMemberOtp(pendingMemberDetails);
+                if (memberFields) memberFields.style.display = 'none';
+                if (memberOtpStep) memberOtpStep.style.display = 'block';
+                el.familyOtpTargetEmail.textContent = email;
+                el.familyOtpInput.value = '';
+                el.familyOtpInput.focus();
+                el.btnSendFamilyOtp.style.display = 'none';
+                el.btnConfirmFamilyOtp.style.display = 'inline-flex';
+                el.btnBackFamilyDetails.style.display = 'inline-flex';
+                showToast('Verification Code Sent', `A code was sent to ${email}.`, 'success');
+            } catch (error) {
+                pendingMemberDetails = null;
+                if (error.status === 403 || (error.message && error.message.toLowerCase().includes('limit reached'))) {
+                    closeModal(el.addMemberModal);
+                    openModal(el.premiumUpgradeModal);
+                } else {
+                    showToast('Add Member Failed', error.message, 'error');
+                }
+            } finally {
+                el.btnSendFamilyOtp.disabled = false;
+                el.btnSendFamilyOtp.textContent = 'Send Verification OTP';
+            }
+        });
+
+        el.btnConfirmFamilyOtp.addEventListener('click', async () => {
+            if (!pendingMemberDetails) return;
+            const otp = el.familyOtpInput.value.trim();
+            if (!/^\d{6}$/.test(otp)) {
+                showToast('Validation Error', 'Enter the 6-digit code sent to the family member email.', 'error');
+                return;
+            }
+
+            el.btnConfirmFamilyOtp.disabled = true;
+            el.btnConfirmFamilyOtp.textContent = 'Verifying Code...';
+            try {
+                const res = await API.verifyFamilyMemberOtp({ ...pendingMemberDetails, otp });
+                const fullName = res.data && res.data.fullName
+                    ? res.data.fullName
+                    : pendingMemberDetails.name;
+                showToast('Member Added', `Account for '${fullName}' verified and created.`, 'success');
+                pendingMemberDetails = null;
                 closeModal(el.addMemberModal);
                 await loadFamilyMembers();
                 await loadDashboard();
@@ -1088,11 +1308,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     closeModal(el.addMemberModal);
                     openModal(el.premiumUpgradeModal);
                 } else {
-                    showToast('Add Member Failed', error.message, 'error');
+                    showToast('Verification Failed', error.message, 'error');
                 }
             } finally {
-                el.btnSaveMember.disabled = false;
-                el.btnSaveMember.textContent = 'Save Family Member';
+                el.btnConfirmFamilyOtp.disabled = false;
+                el.btnConfirmFamilyOtp.textContent = 'Verify & Add to Vault';
             }
         });
 
@@ -1168,38 +1388,26 @@ document.addEventListener('DOMContentLoaded', () => {
             switchView('documents', 'all');
         };
 
-        window.deleteMember = function(memberId, memberName) {
-            state.removeMemberTargetId = memberId;
-            state.removeMemberTargetName = memberName;
+        window.confirmDeleteFamilyMember = async function(memberId, memberName) {
+            if (!confirm(`Are you sure you want to remove ${memberName} from your Family Vault? Their access will be revoked.`)) {
+                return;
+            }
 
-            if (el.removeMemberModal) {
-                if (el.removeMemberTargetName) {
-                    el.removeMemberTargetName.textContent = `'${memberName}'`;
+            try {
+                await API.deleteFamilyMember(memberId);
+                showToast('Member Removed', `'${memberName}' was removed successfully.`, 'success');
+                await loadFamilyMembers();
+                await loadDashboard();
+                if (state.currentView === 'documents') {
+                    await loadDocuments();
                 }
-                openModal(el.removeMemberModal);
-            } else {
-                if (confirm(`Are you sure you want to remove '${memberName}'? Documents linked to this member will be unassigned or removed.`)) {
-                    (async () => {
-                        try {
-                            await API.deleteFamilyMember(memberId);
-                            showToast('Member Removed', `'${memberName}' was removed successfully.`, 'success');
-                            if (state.currentUser && state.currentUser.id === parseInt(memberId, 10)) {
-                                await loadMe();
-                            }
-                            await loadFamilyMembers();
-                            await loadDashboard();
-                            if (state.currentView === 'documents') {
-                                loadDocuments();
-                            }
-                        } catch (error) {
-                            showToast('Remove Failed', error.message, 'error');
-                        }
-                    })();
-                }
+            } catch (error) {
+                showToast('Remove Failed', error.message, 'error');
             }
         };
-        window.deleteFamilyMember = window.deleteMember;
-        window.removeFamilyMember = window.deleteMember;
+        window.deleteMember = window.confirmDeleteFamilyMember;
+        window.deleteFamilyMember = window.confirmDeleteFamilyMember;
+        window.removeFamilyMember = window.confirmDeleteFamilyMember;
     }
 
     /* ------------------------------------------------------------------
@@ -1759,8 +1967,7 @@ document.addEventListener('DOMContentLoaded', () => {
             el.editMemberModal,
             el.premiumUpgradeModal,
             el.calendarDateModal,
-            el.permanentDeleteConfirmModal,
-            el.removeMemberModal
+            el.permanentDeleteConfirmModal
         ].forEach(modal => {
             if (modal) {
                 modal.addEventListener('click', (e) => {
@@ -1837,41 +2044,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // Remove Family Member Confirmation
-        if (el.btnConfirmRemoveMember) {
-            el.btnConfirmRemoveMember.addEventListener('click', async () => {
-                if (!state.removeMemberTargetId) return;
-
-                const targetId = state.removeMemberTargetId;
-                const memberName = state.removeMemberTargetName || 'Member';
-                el.btnConfirmRemoveMember.disabled = true;
-                el.btnConfirmRemoveMember.textContent = 'Removing...';
-
-                try {
-                    await API.deleteFamilyMember(targetId);
-                    showToast('Member Removed', `'${memberName}' was removed successfully.`, 'success');
-                    if (el.removeMemberModal) closeModal(el.removeMemberModal);
-
-                    // If active vault was the removed member, switch back to Admin session
-                    if (state.currentUser && state.currentUser.id === parseInt(targetId, 10)) {
-                        await loadMe();
-                    }
-
-                    await loadFamilyMembers();
-                    await loadDashboard();
-                    if (state.currentView === 'documents') {
-                        loadDocuments();
-                    }
-                } catch (error) {
-                    showToast('Remove Failed', error.message, 'error');
-                } finally {
-                    el.btnConfirmRemoveMember.disabled = false;
-                    el.btnConfirmRemoveMember.textContent = 'Remove Member';
-                    state.removeMemberTargetId = null;
-                    state.removeMemberTargetName = '';
-                }
-            });
-        }
     }
 
     function openModal(modal) {

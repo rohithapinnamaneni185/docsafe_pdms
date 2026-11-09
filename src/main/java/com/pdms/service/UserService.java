@@ -11,11 +11,14 @@ import com.pdms.exception.ResourceNotFoundException;
 import com.pdms.repository.DocumentRepository;
 import com.pdms.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @Transactional
@@ -24,16 +27,24 @@ public class UserService {
     private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
     private final FileStorageService fileStorageService;
+    private final PasswordEncoder passwordEncoder;
 
     @Autowired
-    public UserService(UserRepository userRepository, DocumentRepository documentRepository, FileStorageService fileStorageService) {
+    public UserService(UserRepository userRepository, DocumentRepository documentRepository,
+                       FileStorageService fileStorageService, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.documentRepository = documentRepository;
         this.fileStorageService = fileStorageService;
+        this.passwordEncoder = passwordEncoder != null ? passwordEncoder : new BCryptPasswordEncoder();
+    }
+
+    public UserService(UserRepository userRepository, DocumentRepository documentRepository,
+                       FileStorageService fileStorageService) {
+        this(userRepository, documentRepository, fileStorageService, new BCryptPasswordEncoder());
     }
 
     public UserService(UserRepository userRepository, DocumentRepository documentRepository) {
-        this(userRepository, documentRepository, null);
+        this(userRepository, documentRepository, null, new BCryptPasswordEncoder());
     }
 
     /**
@@ -48,7 +59,7 @@ public class UserService {
         User user = userRepository.findByEmailIgnoreCase(email.trim())
                 .orElseThrow(() -> new BadRequestException("Invalid email or password."));
 
-        if (!user.getPassword().equals(password.trim())) {
+        if (user.getPassword() == null || !passwordEncoder.matches(password, user.getPassword())) {
             throw new BadRequestException("Invalid email or password.");
         }
 
@@ -74,6 +85,20 @@ public class UserService {
      * Creates a new family member account with max 3 non-self members quota enforcement.
      */
     public UserResponse createFamilyMember(CreateMemberRequest request, User currentUser) {
+        return createFamilyMemberWithEncodedPassword(
+                request.getFullName(),
+                request.getEmail(),
+                passwordEncoder.encode(request.getPassword().trim()),
+                request.getRelationship(),
+                currentUser);
+    }
+
+    public UserResponse createFamilyMemberWithEncodedPassword(
+            String fullName,
+            String emailAddress,
+            String encodedPassword,
+            String relationship,
+            User currentUser) {
         if (!currentUser.isAdmin()) {
             throw new BadRequestException("Only the primary administrator can add family members.");
         }
@@ -84,16 +109,16 @@ public class UserService {
             throw new ForbiddenException("Family member limit reached. Please upgrade to DocuSafe Premium to add more members.");
         }
 
-        String email = request.getEmail().trim().toLowerCase();
+        String email = emailAddress.trim().toLowerCase();
         if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new BadRequestException("A family member with this email already exists: " + email);
         }
 
         User member = new User();
-        member.setFullName(request.getFullName().trim());
+        member.setFullName(fullName.trim());
         member.setEmail(email);
-        member.setPassword(request.getPassword().trim());
-        member.setRelationship(request.getRelationship().trim());
+        member.setPassword(encodedPassword);
+        member.setRelationship(relationship.trim());
         member.setRole("ROLE_MEMBER");
 
         User saved = userRepository.save(member);
@@ -141,25 +166,19 @@ public class UserService {
         User member = userRepository.findById(memberId)
                 .orElseThrow(() -> new ResourceNotFoundException("Family member not found with ID: " + memberId));
 
-        if ("Self".equalsIgnoreCase(member.getRelationship()) || 
-            "ROLE_ADMIN".equalsIgnoreCase(member.getRole()) || 
+        if ("ROLE_ADMIN".equalsIgnoreCase(member.getRole()) ||
             member.isAdmin()) {
             throw new BadRequestException("Cannot remove primary vault administrator.");
         }
 
-        // Clean up member's documents and associated physical files
+        // Keep document records and files intact while removing the member's foreign-key owner.
         List<Document> memberDocs = documentRepository.findByUserIdOrderByCreatedAtDesc(memberId);
-        if (fileStorageService != null) {
-            for (Document doc : memberDocs) {
-                if (doc.getFileName() != null && !doc.getFileName().isBlank()) {
-                    try {
-                        fileStorageService.deleteFile(doc.getFileName());
-                    } catch (Exception ignored) {
-                    }
-                }
-            }
+        for (Document document : memberDocs) {
+            document.setUser(currentUser);
         }
-        documentRepository.deleteAll(memberDocs);
+        if (!memberDocs.isEmpty()) {
+            documentRepository.saveAll(memberDocs);
+        }
 
         userRepository.delete(member);
     }
@@ -171,23 +190,6 @@ public class UserService {
     }
 
     /**
-     * Gets or creates the primary default administrator account.
-     */
-    @Transactional
-    public User getOrCreateDefaultAdmin() {
-        return userRepository.findByEmailIgnoreCase("admin@docusafe.local")
-                .orElseGet(() -> {
-                    User admin = new User();
-                    admin.setFullName("System Administrator (Self)");
-                    admin.setEmail("admin@docusafe.local");
-                    admin.setPassword("admin123");
-                    admin.setRole("ROLE_ADMIN");
-                    admin.setRelationship("Self");
-                    return userRepository.save(admin);
-                });
-    }
-
-    /**
      * Updates and saves the user's theme setting.
      */
     @Transactional
@@ -196,4 +198,25 @@ public class UserService {
         user.setTheme(theme);
         return userRepository.save(user);
     }
+
+    @Transactional
+    public User getOrCreateGoogleUser(String email, String fullName) {
+        if (email == null || email.isBlank()) {
+            throw new BadRequestException("Google account did not provide an email address.");
+        }
+
+        String normalizedEmail = email.trim().toLowerCase();
+        return userRepository.findByEmailIgnoreCase(normalizedEmail).orElseGet(() -> {
+            User user = new User();
+            user.setEmail(normalizedEmail);
+            user.setFullName(fullName == null || fullName.isBlank()
+                    ? normalizedEmail.substring(0, normalizedEmail.indexOf('@'))
+                    : fullName.trim());
+            user.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
+            user.setRelationship("Self");
+            user.setRole("ROLE_MEMBER");
+            return userRepository.save(user);
+        });
+    }
+
 }

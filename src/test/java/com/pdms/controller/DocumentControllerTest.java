@@ -7,6 +7,8 @@ import com.pdms.model.ExpiryStatus;
 import com.pdms.service.DocumentService;
 import com.pdms.service.FileStorageService;
 import com.pdms.service.UserService;
+import com.pdms.config.SecurityConfig;
+import com.pdms.service.GoogleOAuth2SuccessHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,18 +17,28 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.context.annotation.Import;
 
 import java.time.LocalDate;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @WebMvcTest(DocumentController.class)
+@Import(SecurityConfig.class)
 class DocumentControllerTest {
 
     @Autowired
@@ -41,6 +53,12 @@ class DocumentControllerTest {
     @MockBean
     private UserService userService;
 
+    @MockBean
+    private GoogleOAuth2SuccessHandler googleOAuth2SuccessHandler;
+
+    @MockBean
+    private ClientRegistrationRepository clientRegistrationRepository;
+
     private User adminUser;
     private MockHttpSession session;
 
@@ -53,6 +71,20 @@ class DocumentControllerTest {
         session.setAttribute(AuthController.SESSION_USER_KEY, 1L);
 
         when(userService.getUserById(1L)).thenReturn(adminUser);
+        lenient().when(clientRegistrationRepository.findByRegistrationId("google"))
+                .thenReturn(ClientRegistration.withRegistrationId("google")
+                        .clientId("test-client")
+                        .clientSecret("test-secret")
+                        .clientName("Google")
+                        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                        .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+                        .scope("openid", "email", "profile")
+                        .authorizationUri("https://accounts.google.com/o/oauth2/v2/auth")
+                        .tokenUri("https://oauth2.googleapis.com/token")
+                        .userInfoUri("https://openidconnect.googleapis.com/v1/userinfo")
+                        .userNameAttributeName("sub")
+                        .build());
     }
 
     @Test
@@ -91,6 +123,7 @@ class DocumentControllerTest {
 
         mockMvc.perform(multipart("/api/documents")
                         .file(image)
+                        .with(csrf())
                         .param("documentName", "Car Insurance")
                         .param("category", "Vehicle")
                         .param("expiryDate", LocalDate.now().plusDays(10).toString())
@@ -104,7 +137,7 @@ class DocumentControllerTest {
     @Test
     @DisplayName("DELETE /api/documents/{id} should soft delete document")
     void testDeleteDocument() throws Exception {
-        mockMvc.perform(delete("/api/documents/1").session(session))
+        mockMvc.perform(delete("/api/documents/1").with(csrf()).session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("Document moved to Trash"));
@@ -118,7 +151,7 @@ class DocumentControllerTest {
         doc.setDocumentName("Test Passport");
         when(documentService.restoreDocument(eq(1L), any())).thenReturn(doc);
 
-        mockMvc.perform(put("/api/documents/1/restore").session(session))
+        mockMvc.perform(put("/api/documents/1/restore").with(csrf()).session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("Document restored successfully"));
@@ -127,7 +160,7 @@ class DocumentControllerTest {
     @Test
     @DisplayName("DELETE /api/documents/{id}/permanent should permanently remove document")
     void testPermanentlyDeleteDocument() throws Exception {
-        mockMvc.perform(delete("/api/documents/1/permanent").session(session))
+        mockMvc.perform(delete("/api/documents/1/permanent").with(csrf()).session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("Document permanently deleted from vault and disk"));
@@ -151,5 +184,17 @@ class DocumentControllerTest {
         mockMvc.perform(get("/api/documents/calendar").session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("Google sign-in requests the standard account chooser")
+    void googleSignInRequestsAccountChooser() throws Exception {
+        mockMvc.perform(get("/oauth2/authorization/google"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(result -> {
+                    String redirectUrl = result.getResponse().getRedirectedUrl();
+                    assertNotNull(redirectUrl);
+                    assertTrue(redirectUrl.contains("prompt=select_account"));
+                });
     }
 }

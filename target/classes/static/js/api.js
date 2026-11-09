@@ -12,12 +12,23 @@ const API = (() => {
      */
     async function request(endpoint, options = {}) {
         const url = `${API_ROOT}${endpoint}`;
-        
-        // Ensure cookies (HTTP session) are sent with requests
+        const method = (options.method || 'GET').toUpperCase();
         const config = {
             ...options,
             credentials: 'same-origin'
         };
+        const isAuthenticationRequest = endpoint.startsWith('/auth/');
+        if (!isAuthenticationRequest && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+            const csrfResponse = await fetch(`${API_ROOT}/csrf`, { credentials: 'same-origin' });
+            if (!csrfResponse.ok) {
+                throw new Error('Unable to initialize the request security token. Please reload and try again.');
+            }
+            const csrfToken = await csrfResponse.text();
+            config.headers = {
+                ...(options.headers || {}),
+                'X-CSRF-TOKEN': csrfToken
+            };
+        }
 
         try {
             const response = await fetch(url, config);
@@ -52,27 +63,43 @@ const API = (() => {
 
     return {
         /* ================= AUTHENTICATION APIS ================= */
-        async loginInitiate(identifier, password) {
-            return await request('/auth/login-initiate', {
+        async loginInit(email, password) {
+            return await request('/auth/login-request', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ identifier, password })
+                body: JSON.stringify({ email, password })
             });
         },
 
-        async verifyOtp(tempToken, otp) {
+        async register(fullName, email, password) {
+            return await request('/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fullName, email, password })
+            });
+        },
+
+        async loginInitiate(identifier, password) {
+            return await request('/auth/login-init', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: identifier, password })
+            });
+        },
+
+        async verifyOtp(emailOrToken, otp) {
             return await request('/auth/verify-otp', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tempToken, otp })
+                body: JSON.stringify({ tempToken: emailOrToken, otp })
             });
         },
 
-        async resendOtp(tempToken) {
+        async resendOtp(emailOrToken) {
             return await request('/auth/resend-otp', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tempToken })
+                body: JSON.stringify({ tempToken: emailOrToken })
             });
         },
 
@@ -106,7 +133,19 @@ const API = (() => {
         },
 
         async addFamilyMember(memberData) {
-            return await request('/users/family-members', {
+            return await API.initiateFamilyMemberOtp(memberData);
+        },
+
+        async initiateFamilyMemberOtp(memberData) {
+            return await request('/family/initiate-add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(memberData)
+            });
+        },
+
+        async verifyFamilyMemberOtp(memberData) {
+            return await request('/family/verify-and-create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(memberData)
@@ -122,7 +161,7 @@ const API = (() => {
         },
 
         async deleteFamilyMember(id) {
-            return await request(`/auth/family-members/${id}`, {
+            return await request(`/users/family-members/${id}`, {
                 method: 'DELETE'
             });
         },

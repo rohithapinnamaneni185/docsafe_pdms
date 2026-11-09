@@ -1,21 +1,21 @@
 package com.pdms.controller;
 
 import com.pdms.dto.ApiResponse;
-import com.pdms.dto.CreateMemberRequest;
+import com.pdms.dto.AuthResponse;
+import com.pdms.dto.LoginInitRequest;
 import com.pdms.dto.LoginInitiateRequest;
 import com.pdms.dto.LoginInitiateResponse;
-import com.pdms.dto.LoginRequest;
-import com.pdms.dto.ResendOtpRequest;
+import com.pdms.dto.OtpVerifyRequest;
+import com.pdms.dto.RegisterRequest;
 import com.pdms.dto.UpdateMemberRequest;
 import com.pdms.dto.UserResponse;
-import com.pdms.dto.VerifyOtpRequest;
 import com.pdms.entity.User;
 import com.pdms.exception.BadRequestException;
 import com.pdms.exception.UnauthorizedException;
 import com.pdms.service.OtpService;
 import com.pdms.service.UserService;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -41,9 +41,40 @@ public class AuthController {
     }
 
     /**
+     * POST /api/auth/login-init
+     * Step 1 of Two-Factor Authentication: validates email + password,
+     * generates a 6-digit OTP, dispatches email via Gmail SMTP, and returns HTTP 200.
+     */
+    @PostMapping({"/login-init", "/login", "/login-request"})
+    public ResponseEntity<AuthResponse> loginInit(
+            @Valid @RequestBody LoginInitRequest request) {
+        if (otpService == null) {
+            throw new BadRequestException("OTP Service is currently unavailable.");
+        }
+        LoginInitiateResponse response = otpService.initiateLogin(request.getEmail(), request.getPassword());
+        AuthResponse authResponse = AuthResponse.ok("Verification code sent to your email",
+                response.getTempToken(), response);
+        authResponse.setEmail(request.getEmail().trim());
+        return ResponseEntity.ok(authResponse);
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+        if (otpService == null) {
+            throw new BadRequestException("OTP Service is currently unavailable.");
+        }
+        LoginInitiateResponse response = otpService.register(
+                request.getResolvedName(), request.getEmail(), request.getPassword());
+        AuthResponse authResponse = AuthResponse.ok(
+                "Verification OTP sent to your email", response.getTempToken(), response);
+        authResponse.setEmail(response.getEmail());
+        return ResponseEntity.ok(authResponse);
+    }
+
+    /**
      * POST /api/auth/login-initiate
-     * Step 1 of Two-Factor Authentication: validates email or mobile number + password,
-     * generates a 6-digit OTP, dispatches SMS & email simulation, and returns pending session.
+     * Step 1 of Two-Factor Authentication (backward-compatible): validates email or mobile + password,
+     * generates a 6-digit OTP, dispatches email, and returns pending session.
      */
     @PostMapping("/login-initiate")
     public ResponseEntity<ApiResponse<LoginInitiateResponse>> loginInitiate(
@@ -52,52 +83,59 @@ public class AuthController {
             throw new BadRequestException("OTP Service is currently unavailable.");
         }
         LoginInitiateResponse response = otpService.initiateLogin(request);
-        return ResponseEntity.ok(ApiResponse.ok("Verification code dispatched to your registered email and mobile number.", response));
+        return ResponseEntity.ok(ApiResponse.ok("Verification code sent to your email", response));
     }
 
     /**
      * POST /api/auth/verify-otp
-     * Step 2 of Two-Factor Authentication: verifies the 6-digit OTP code against the pending session,
+     * Step 2 of Two-Factor Authentication: verifies the 6-digit OTP code against email / pending session,
      * sets the active HTTP session, and returns user details.
      */
     @PostMapping("/verify-otp")
-    public ResponseEntity<ApiResponse<UserResponse>> verifyOtp(
-            @Valid @RequestBody VerifyOtpRequest request,
+    public ResponseEntity<AuthResponse> verifyOtp(
+            @Valid @RequestBody OtpVerifyRequest request,
+            HttpServletRequest servletRequest,
             HttpSession session) {
         if (otpService == null) {
             throw new BadRequestException("OTP Service is currently unavailable.");
         }
-        User user = otpService.verifyOtp(request.getTempToken(), request.getOtp());
+        String identifier = request.getTempToken() != null && !request.getTempToken().isBlank()
+                ? request.getTempToken().trim()
+                : request.getEmail();
+        if (identifier == null || identifier.isBlank()) {
+            throw new BadRequestException("Email address or session token is required.");
+        }
+        User user = otpService.verifyOtp(identifier, request.getOtp());
+        servletRequest.changeSessionId();
         session.setAttribute(SESSION_USER_KEY, user.getId());
+        String sessionToken = session.getId();
         UserResponse resp = UserResponse.fromEntity(user);
-        return ResponseEntity.ok(ApiResponse.ok("Authentication successful. Welcome, " + user.getFullName() + "!", resp));
+        AuthResponse authResponse = AuthResponse.ok("Authenticated", sessionToken, resp);
+        authResponse.setRedirectUrl("/dashboard.html");
+        return ResponseEntity.ok(authResponse);
     }
 
     /**
      * POST /api/auth/resend-otp
-     * Regenerates and resends a fresh 6-digit OTP to the pending verification session.
+     * Regenerates and resends a fresh 6-digit OTP to the email address or pending session.
      */
     @PostMapping("/resend-otp")
-    public ResponseEntity<ApiResponse<LoginInitiateResponse>> resendOtp(
-            @Valid @RequestBody ResendOtpRequest request) {
+    public ResponseEntity<AuthResponse> resendOtp(
+            @RequestBody(required = false) java.util.Map<String, String> body) {
         if (otpService == null) {
             throw new BadRequestException("OTP Service is currently unavailable.");
         }
-        LoginInitiateResponse response = otpService.resendOtp(request.getTempToken());
-        return ResponseEntity.ok(ApiResponse.ok("A fresh 6-digit verification code has been dispatched.", response));
-    }
-
-    /**
-     * POST /api/auth/login
-     */
-    @PostMapping("/login")
-    public ResponseEntity<ApiResponse<UserResponse>> login(
-            @Valid @RequestBody LoginRequest request,
-            HttpSession session) {
-        User user = userService.authenticate(request.getEmail(), request.getPassword());
-        session.setAttribute(SESSION_USER_KEY, user.getId());
-        UserResponse resp = UserResponse.fromEntity(user);
-        return ResponseEntity.ok(ApiResponse.ok("Welcome back, " + user.getFullName() + "!", resp));
+        String identifier = null;
+        if (body != null) {
+            identifier = body.get("tempToken");
+            if (identifier == null || identifier.isBlank()) identifier = body.get("email");
+        }
+        if (identifier == null || identifier.isBlank()) {
+            throw new BadRequestException("Email address or session token is required.");
+        }
+        LoginInitiateResponse response = otpService.resendOtp(identifier);
+        return ResponseEntity.ok(AuthResponse.ok("A new code has been sent to your email",
+                response.getTempToken(), response));
     }
 
     /**
@@ -141,20 +179,6 @@ public class AuthController {
         User user = userService.getUserById(userId);
         session.setAttribute(SESSION_USER_KEY, user.getId());
         return ResponseEntity.ok(ApiResponse.ok("Active vault switched to " + user.getFullName(), UserResponse.fromEntity(user)));
-    }
-
-    /**
-     * POST /api/auth/family-members
-     * Adds a new family member account. (Admin only)
-     */
-    @PostMapping("/family-members")
-    public ResponseEntity<ApiResponse<UserResponse>> addFamilyMember(
-            @Valid @RequestBody CreateMemberRequest request,
-            HttpSession session) {
-        User currentUser = getAuthenticatedUserOrThrow(session, userService);
-        UserResponse created = userService.createFamilyMember(request, currentUser);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.ok("Family member '" + created.getFullName() + "' added successfully.", created));
     }
 
     /**

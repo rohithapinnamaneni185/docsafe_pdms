@@ -2,9 +2,12 @@ package com.pdms.controller;
 
 import com.pdms.dto.ApiResponse;
 import com.pdms.dto.CreateMemberRequest;
+import com.pdms.dto.LoginInitiateResponse;
+import com.pdms.dto.OtpVerifyRequest;
 import com.pdms.dto.UpdateMemberRequest;
 import com.pdms.dto.UserResponse;
 import com.pdms.entity.User;
+import com.pdms.service.FamilyMemberOtpService;
 import com.pdms.service.UserService;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
@@ -19,9 +22,11 @@ import java.util.List;
 public class UserController {
 
     private final UserService userService;
+    private final FamilyMemberOtpService familyMemberOtpService;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, FamilyMemberOtpService familyMemberOtpService) {
         this.userService = userService;
+        this.familyMemberOtpService = familyMemberOtpService;
     }
 
     /**
@@ -30,23 +35,29 @@ public class UserController {
      */
     @GetMapping({"/family-members", "/family"})
     public ResponseEntity<ApiResponse<List<UserResponse>>> getFamilyMembers(HttpSession session) {
-        User currentUser = AuthController.getAuthenticatedUserOrThrow(session, userService);
+        AuthController.getAuthenticatedUserOrThrow(session, userService);
         List<UserResponse> members = userService.getFamilyMembers();
         return ResponseEntity.ok(ApiResponse.ok("Retrieved " + members.size() + " family members", members));
     }
 
-    /**
-     * POST /api/users/family-members or /api/users/family
-     * Adds a new family member account. (Admin only)
-     */
-    @PostMapping({"/family-members", "/family"})
-    public ResponseEntity<ApiResponse<UserResponse>> addFamilyMember(
+    @PostMapping({"/family-members", "/family", "/family-members/otp/initiate"})
+    public ResponseEntity<ApiResponse<LoginInitiateResponse>> initiateFamilyMemberOtp(
             @Valid @RequestBody CreateMemberRequest request,
             HttpSession session) {
-        User currentUser = AuthController.getAuthenticatedUserOrThrow(session, userService);
-        UserResponse created = userService.createFamilyMember(request, currentUser);
+        User administrator = AuthController.getAuthenticatedUserOrThrow(session, userService);
+        LoginInitiateResponse response = familyMemberOtpService.initiate(request, administrator);
+        return ResponseEntity.ok(ApiResponse.ok("OTP sent to your email", response));
+    }
+
+    @PostMapping("/family-members/otp/verify")
+    public ResponseEntity<ApiResponse<UserResponse>> verifyFamilyMemberOtp(
+            @Valid @RequestBody OtpVerifyRequest request,
+            HttpSession session) {
+        User administrator = AuthController.getAuthenticatedUserOrThrow(session, userService);
+        UserResponse created = familyMemberOtpService.verify(
+                request.getTempToken(), request.getOtp(), administrator);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.ok("Family member '" + created.getFullName() + "' added successfully.", created));
+                .body(ApiResponse.ok("Family member email verified and account created.", created));
     }
 
     /**

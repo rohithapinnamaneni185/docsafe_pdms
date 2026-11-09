@@ -17,26 +17,39 @@ USE personal_document_db;
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT NOT NULL AUTO_INCREMENT,
     full_name VARCHAR(150) NOT NULL,
-    email VARCHAR(150) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
     mobile_number VARCHAR(15) DEFAULT NULL,
-    password VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255) DEFAULT NULL,
     relationship VARCHAR(50) NOT NULL DEFAULT 'Self',
     role VARCHAR(50) NOT NULL DEFAULT 'ROLE_MEMBER',
     theme VARCHAR(50) NOT NULL DEFAULT 'theme-default',
-    otp_code VARCHAR(6) DEFAULT NULL,
-    otp_expiry DATETIME DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     INDEX idx_user_email (email),
     INDEX idx_user_mobile (mobile_number)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- --------------------------------------------------------------------
--- Default Admin Account (admin@docusafe.local / 9876543210 / admin123)
--- --------------------------------------------------------------------
-INSERT INTO users (id, full_name, email, mobile_number, password, relationship, role, theme, created_at)
-SELECT 1, 'Rohitha (Self)', 'admin@docusafe.local', '9876543210', 'admin123', 'Self', 'ROLE_ADMIN', 'theme-default', NOW()
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'admin@docusafe.local');
+INSERT INTO users (full_name, email, password_hash, relationship, role, theme)
+SELECT 'Rohitha', 'rohithapinnamaneni185@gmail.com', NULL, 'Self', 'ROLE_ADMIN', 'theme-default'
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'rohithapinnamaneni185@gmail.com');
+
+INSERT INTO users (full_name, email, password_hash, relationship, role, theme)
+SELECT 'Rohitha', '25r21a05l4@mlrit.ac.in', NULL, 'Self', 'ROLE_MEMBER', 'theme-default'
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = '25r21a05l4@mlrit.ac.in');
+
+CREATE TABLE IF NOT EXISTS otp_tokens (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    email VARCHAR(255) NOT NULL,
+    otp_hash VARCHAR(255) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    consumed BOOLEAN NOT NULL DEFAULT FALSE,
+    verification_token VARCHAR(36) DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY idx_otp_verification_token (verification_token),
+    INDEX idx_otp_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------------------
 -- Table structure for table: documents

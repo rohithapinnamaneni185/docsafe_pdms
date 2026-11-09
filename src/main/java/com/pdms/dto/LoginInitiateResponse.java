@@ -5,16 +5,15 @@ public class LoginInitiateResponse {
     private String status;
     private String tempToken;
     private String destination;
-    private String debugOtp;
+    private String email;
 
     public LoginInitiateResponse() {
     }
 
-    public LoginInitiateResponse(String status, String tempToken, String destination, String debugOtp) {
+    public LoginInitiateResponse(String status, String tempToken, String destination) {
         this.status = status;
         this.tempToken = tempToken;
         this.destination = destination;
-        this.debugOtp = debugOtp;
     }
 
     public String getStatus() {
@@ -41,12 +40,12 @@ public class LoginInitiateResponse {
         this.destination = destination;
     }
 
-    public String getDebugOtp() {
-        return debugOtp;
+    public String getEmail() {
+        return email;
     }
 
-    public void setDebugOtp(String debugOtp) {
-        this.debugOtp = debugOtp;
+    public void setEmail(String email) {
+        this.email = email;
     }
+
 }
-

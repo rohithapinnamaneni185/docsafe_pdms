@@ -48,7 +48,7 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("Should successfully delete family member, clean up documents and physical files")
+    @DisplayName("Should reassign documents before deleting a family member")
     void deleteFamilyMember_Success() {
         when(userRepository.findById(2L)).thenReturn(Optional.of(regularMember));
 
@@ -61,8 +61,10 @@ class UserServiceTest {
 
         userService.deleteFamilyMember(2L, adminUser);
 
-        verify(fileStorageService, times(1)).deleteFile("uuid-test-scan.png");
-        verify(documentRepository, times(1)).deleteAll(List.of(docWithFile));
+        assertSame(adminUser, docWithFile.getUser());
+        verify(documentRepository).saveAll(List.of(docWithFile));
+        verify(documentRepository, never()).deleteAll(any());
+        verifyNoInteractions(fileStorageService);
         verify(userRepository, times(1)).delete(regularMember);
     }
 
@@ -85,7 +87,7 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("Should reject deletion when target has admin role or Self relationship")
+    @DisplayName("Should reject deletion when target has admin role")
     void deleteFamilyMember_CannotDeleteAdminAccount() {
         User anotherAdmin = new User("Admin Two", "admin2@docusafe.local", "pass", "Self", "ROLE_ADMIN");
         anotherAdmin.setId(5L);
@@ -99,6 +101,19 @@ class UserServiceTest {
     }
 
     @Test
+    @DisplayName("Should allow deleting a non-admin account whose relationship is Self")
+    void deleteFamilyMember_AllowsSelfRelationshipForNonAdmin() {
+        User familyAccount = new User("Family Account", "family@example.com", "pass", "Self", "ROLE_MEMBER");
+        familyAccount.setId(6L);
+        when(userRepository.findById(6L)).thenReturn(Optional.of(familyAccount));
+        when(documentRepository.findByUserIdOrderByCreatedAtDesc(6L)).thenReturn(List.of());
+
+        assertDoesNotThrow(() -> userService.deleteFamilyMember(6L, adminUser));
+
+        verify(userRepository).delete(familyAccount);
+    }
+
+    @Test
     @DisplayName("Should throw ResourceNotFoundException if member not found")
     void deleteFamilyMember_NotFound() {
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
@@ -107,4 +122,3 @@ class UserServiceTest {
                 userService.deleteFamilyMember(99L, adminUser));
     }
 }
-
